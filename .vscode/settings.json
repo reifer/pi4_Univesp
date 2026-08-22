@@ -1,0 +1,69 @@
+{
+  "python.analysis.extraPaths": [
+    "src"
+  ],
+  "python.analysis.exclude": [
+    "**/.venv",
+    "**/data",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/_pyfrely_virtual_*",
+    "**/.pytest_cache",
+    "**/.ruff_cache"
+  ],
+  "python.analysis.ignore": [
+    "**/.venv",
+    "**/data",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/_pyfrely_virtual_*",
+    "**/.pytest_cache",
+    "**/.ruff_cache"
+  ],
+  "pyright.exclude": [
+    "**/.venv",
+    "**/data",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/_pyfrely_virtual_*",
+    "**/.pytest_cache",
+    "**/.ruff_cache"
+  ],
+  "ruff.exclude": [
+    "**/.venv",
+    "**/data",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/_pyfrely_virtual_*",
+    "**/.pytest_cache",
+    "**/.ruff_cache"
+  ],
+  "python.linting.ignorePatterns": [
+    "**/.venv/**",
+    "**/data/**",
+    "**/node_modules/**",
+    "**/__pycache__/**",
+    "**/_pyfrely_virtual_*/**"
+  ],
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/_pyfrely_virtual_*": true
+  },
+  "search.exclude": {
+    "**/.venv": true,
+    "**/data": true,
+    "**/node_modules": true,
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "**/.ruff_cache": true,
+    "**/_pyfrely_virtual_*": true
+  }
+}

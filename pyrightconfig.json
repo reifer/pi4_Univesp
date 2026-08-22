@@ -1,0 +1,17 @@
+{
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "**/.venv",
+    "**/data",
+    "**/node_modules",
+    "**/__pycache__",
+    "**/_pyfrely_virtual_*"
+  ],
+  "extraPaths": [
+    "src"
+  ],
+  "reportMissingImports": false,
+  "pythonVersion": "3.12"
+}
