@@ -1,0 +1,30 @@
+name: CI/CD Pipeline - ENEM 2025
+
+on:
+  push:
+    branches: [ dev, hom, main ]
+  pull_request:
+    branches: [ dev, hom, main ]
+
+jobs:
+  ci-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.14'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Run Tests / Quality Checks
+        run: |
+          echo "Executando verificações do pipeline para o ambiente..."
+          # Adicione testes ou validações do pipeline aqui se necessário

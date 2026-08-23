@@ -65,5 +65,6 @@
     "**/.pytest_cache": true,
     "**/.ruff_cache": true,
     "**/_pyfrely_virtual_*": true
-  }
+  },
+  "python.defaultInterpreterPath": "/home/reifer/Documentos/Projetos Software/Faculdade/PI4/my-data-project/.venv/bin/python"
 }
