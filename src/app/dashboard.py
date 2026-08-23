@@ -1,11 +1,12 @@
 import json
 import os
 import pandas as pd
+import pyarrow.dataset as ds
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-# Configuração inicial da página
+# Configuração inicial da página (Tema claro forçado globalmente)
 st.set_page_config(
     page_title="ENEM 2025 - Analytics & AI Dashboard",
     page_icon="🎓",
@@ -13,13 +14,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Estilização CSS personalizada (Clean / Professional Data Analytics)
+# Estilização CSS personalizada (Tema Claro Profissional & Clean)
 st.markdown("""
 <style>
-    /* Fundo principal em cinza bem claro (#F9F9F9) e texto escuro (#1E293B) */
+    /* Fundo principal em cinza bem claro (#F8FAFC) e texto escuro (#0F172A) */
     .stApp, .main, .block-container {
-        background-color: #F9F9F9 !important;
-        color: #1E293B !important;
+        background-color: #F8FAFC !important;
+        color: #0F172A !important;
         font-family: 'Inter', system-ui, -apple-system, sans-serif;
     }
 
@@ -33,13 +34,13 @@ st.markdown("""
         color: #334155;
     }
 
-    /* Fundo da Barra Lateral (Sidebar) em cinza escuro profissional (#262730) */
+    /* Fundo da Barra Lateral (Sidebar) em tema claro limpo (#FFFFFF) com borda sutil */
     section[data-testid="stSidebar"] {
-        background-color: #262730 !important;
-        border-right: 1px solid #334155;
+        background-color: #FFFFFF !important;
+        border-right: 1px solid #E2E8F0;
     }
 
-    /* Texto, rótulos e títulos na Barra Lateral totalmente brancos (#FFFFFF / #F8FAFC) */
+    /* Textos, rótulos e títulos na Barra Lateral legíveis */
     section[data-testid="stSidebar"] *,
     section[data-testid="stSidebar"] p,
     section[data-testid="stSidebar"] span,
@@ -51,17 +52,17 @@ st.markdown("""
     section[data-testid="stSidebar"] h4,
     section[data-testid="stSidebar"] li,
     section[data-testid="stSidebar"] .stMarkdown {
-        color: #FFFFFF !important;
+        color: #1E293B !important;
     }
 
     /* Componente de Alerta / Nota de Negócio na Sidebar */
     section[data-testid="stSidebar"] div[data-testid="stAlert"] {
-        background-color: #1E293B !important;
-        border: 1px solid #3B82F6 !important;
+        background-color: #F1F5F9 !important;
+        border: 1px solid #CBD5E1 !important;
         border-radius: 8px !important;
     }
     section[data-testid="stSidebar"] div[data-testid="stAlert"] * {
-        color: #FFFFFF !important;
+        color: #334155 !important;
     }
 
     /* Tags do Multiselect na Sidebar */
@@ -143,16 +144,48 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Funções de carregamento de dados com Cache (Fases 1, 2 e 3)
+
+# Funções de carregamento de dados com Cache e Dicionário Enriquecido
 @st.cache_data
 def load_data():
+    enriched_parquet_path = "data/processed/enem_2025_enriched_parquet"
     raw_parquet_path = "data/processed/enem_2025_cleaned_parquet"
+    dict_path = "data/dictionary/enem_2025_dict.json"
     insights_path = "data/processed/enem_2025_ml_insights.json"
     notas_uf_path = "data/processed/enem_2025_agg_notas_uf_parquet"
     notas_renda_path = "data/processed/enem_2025_agg_notas_renda_parquet"
     
-    cols = ['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006']
-    df = pd.read_parquet(raw_parquet_path, columns=cols) if os.path.exists(raw_parquet_path) else pd.DataFrame()
+    enem_dict = {}
+    if os.path.exists(dict_path):
+        try:
+            with open(dict_path, "r", encoding="utf-8") as f:
+                enem_dict = json.load(f)
+        except Exception as ex:
+            st.sidebar.warning(f"Erro ao ler dicionário JSON: {ex}")
+
+    df = pd.DataFrame()
+    if os.path.exists(enriched_parquet_path):
+        try:
+            dataset = ds.dataset(enriched_parquet_path)
+            available_cols = dataset.schema.names
+            desired_cols = [
+                'SG_UF_PROVA', 'IN_TREINEIRO', 'IN_TREINEIRO_DESC',
+                'TP_SEXO', 'TP_SEXO_DESC',
+                'Q006', 'Q006_DESC',
+                'Q007', 'Q007_DESC',
+                'TP_COR_RACA', 'TP_COR_RACA_DESC',
+                'TP_ST_CONCLUSAO', 'TP_ST_CONCLUSAO_DESC',
+                'TP_FAIXA_ETARIA', 'TP_FAIXA_ETARIA_DESC'
+            ]
+            cols_to_load = [c for c in desired_cols if c in available_cols]
+            df = pd.read_parquet(enriched_parquet_path, columns=cols_to_load)
+        except Exception as ex:
+            st.sidebar.warning(f"Recorrendo ao dataset padrão devido a: {ex}")
+            if os.path.exists(raw_parquet_path):
+                df = pd.read_parquet(raw_parquet_path, columns=['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006'])
+    elif os.path.exists(raw_parquet_path):
+        df = pd.read_parquet(raw_parquet_path, columns=['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006'])
+
     df_notas_uf = pd.read_parquet(notas_uf_path) if os.path.exists(notas_uf_path) else pd.DataFrame()
     df_notas_renda = pd.read_parquet(notas_renda_path) if os.path.exists(notas_renda_path) else pd.DataFrame()
         
@@ -161,58 +194,56 @@ def load_data():
         with open(insights_path, "r", encoding="utf-8") as f:
             ml_insights = json.load(f)
             
-    return df, df_notas_uf, df_notas_renda, ml_insights
+    return df, df_notas_uf, df_notas_renda, ml_insights, enem_dict
 
-df_raw, df_notas_uf, df_notas_renda, ml_insights = load_data()
+
+df_raw, df_notas_uf, df_notas_renda, ml_insights, enem_dict = load_data()
 
 # Header da Aplicação
 st.markdown("""
 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; padding: 20px 0; border-bottom: 1px solid #E2E8F0;">
     <div>
-        <span class="badge-primary">Projeto Integrador (PI4)</span>
+        <span class="badge-primary">Projeto Integrador (PI4 Univesp)</span>
         <h1 style="margin-top: 10px; margin-bottom: 0; font-size: 2.2rem;">🎓 ENEM 2025 — Analytics & AI Dashboard</h1>
-        <p style="color: #475569; font-size: 1.05rem; margin-top: 5px;">Visão executiva, geográfica, socioeconômica e preditiva baseada no pipeline PySpark</p>
+        <p style="color: #475569; font-size: 1.05rem; margin-top: 5px;">Visão executiva, geográfica, socioeconômica e preditiva enriquecida via dicionário de dados oficial</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 if df_raw.empty:
-    st.error("Erro: Dados do ENEM não foram encontrados em `data/processed/enem_2025_cleaned_parquet`.")
+    st.error("Erro: Dados do ENEM não foram encontrados em `data/processed/enem_2025_enriched_parquet` nem em `enem_2025_cleaned_parquet`.")
     st.stop()
 
-# Mapeamento amigável do tipo de candidato
+# Mapeamento do tipo de candidato
 treineiro_map = {"Não Treineiro": "0", "Treineiro": "1"}
 
-# Painel Lateral (Sidebar) Organizado em Fundo Escuro Profissional (#262730)
-st.sidebar.image("https://img.icons8.com/isometric-line/100/education.png", width=65)
+# --- PAINEL LATERAL (SIDEBAR) OTIMIZADO COM TEMA CLARO E EXPANDERS ---
+st.sidebar.image("https://img.icons8.com/isometric-line/100/education.png", width=55)
 st.sidebar.title("🎛️ Filtros de Pesquisa")
 
 st.sidebar.divider()
 
-# 1. Bloco de Recorte Geográfico
-st.sidebar.subheader("📍 Recorte Geográfico")
-all_ufs = sorted(df_raw["SG_UF_PROVA"].unique())
-select_all_ufs = st.sidebar.checkbox("Selecionar Todos os Estados (UF)", value=True)
+# 1. Bloco de Recorte Geográfico (Expandido por padrão)
+with st.sidebar.expander("📍 Recorte Geográfico", expanded=True):
+    all_ufs = sorted(df_raw["SG_UF_PROVA"].unique())
+    select_all_ufs = st.checkbox("Selecionar Todos os Estados (UF)", value=True)
 
-if select_all_ufs:
-    selected_ufs = all_ufs
-else:
-    selected_ufs = st.sidebar.multiselect("Filtrar por UF:", all_ufs, default=all_ufs[:5])
-
-st.sidebar.divider()
+    if select_all_ufs:
+        selected_ufs = all_ufs
+    else:
+        selected_ufs = st.multiselect("Filtrar por UF:", all_ufs, default=all_ufs[:5] if len(all_ufs) >= 5 else all_ufs)
 
 # 2. Bloco de Perfil do Candidato
-st.sidebar.subheader("👤 Perfil do Candidato")
-selected_treineiro_labels = st.sidebar.multiselect(
-    "Tipo de Candidato (IN_TREINEIRO):",
-    options=["Não Treineiro", "Treineiro"],
-    default=["Não Treineiro", "Treineiro"],
-    help="Selecione 'Treineiro' para candidatos que fazem o exame apenas para teste e 'Não Treineiro' para os concorrentes às vagas regulares do Sisu/Prouni."
-)
+with st.sidebar.expander("👤 Perfil do Candidato", expanded=False):
+    selected_treineiro_labels = st.multiselect(
+        "Tipo de Candidato (IN_TREINEIRO):",
+        options=["Não Treineiro", "Treineiro"],
+        default=["Não Treineiro", "Treineiro"],
+        help="Selecione 'Treineiro' para candidatos que fazem o exame apenas para teste e 'Não Treineiro' para os concorrentes às vagas regulares do Sisu/Prouni."
+    )
 
+# 3. Nota Explicativa de Negócio em Bloco Limpo
 st.sidebar.divider()
-
-# 3. Nota Explicativa de Negócio
 st.sidebar.info(
     "💡 **Nota de Negócio (Treineiros):**\n\n"
     "Treineiros são estudantes do 1º ou 2º ano do Ensino Médio que realizam o exame apenas para autoavaliação "
@@ -279,10 +310,10 @@ with c4:
     </div>
     """, unsafe_allow_html=True)
 
-# Abas de navegação principal (Fases 1, 2 e 3)
+# Abas de navegação principal
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Panorama Geográfico (UF)",
-    "💰 Perfil Socioeconômico",
+    "💰 Perfil Socioeconômico & Demográfico",
     "📈 Desempenho & Notas (TRI)",
     "🤖 Machine Learning & IA"
 ])
@@ -317,13 +348,12 @@ with tab1:
 
     with col_right:
         st.subheader("Distribuição por Sexo")
-        sex_counts = filtered_df["TP_SEXO"].value_counts()
-        fem_count = sex_counts.get("F", 0)
-        masc_count = sex_counts.get("M", 0)
+        sex_col = "TP_SEXO_DESC" if "TP_SEXO_DESC" in filtered_df.columns else "TP_SEXO"
+        sex_counts = filtered_df[sex_col].value_counts()
         
         fig_pie = go.Figure(data=[go.Pie(
-            labels=["Feminino", "Masculino"],
-            values=[fem_count, masc_count],
+            labels=sex_counts.index.tolist(),
+            values=sex_counts.values.tolist(),
             hole=.5,
             marker_colors=["#ec4899", "#2563eb"]
         )])
@@ -377,42 +407,99 @@ with tab1:
     )
     st.plotly_chart(fig_pct, use_container_width=True)
 
-# TAB 2: PERFIL SOCIOECONÔMICO
+# TAB 2: PERFIL SOCIOECONÔMICO & DEMOGRÁFICO
 with tab2:
-    st.subheader("Distribuição por Faixa de Renda Familiar (Q006)")
-    renda_counts = filtered_df["Q006"].value_counts().reset_index()
-    renda_counts.columns = ["Q006", "total_inscritos"]
+    st.subheader("💰 Distribuição por Faixa de Renda Familiar (Q006)")
+    
+    # Preparação da coluna descritiva formatada
+    if "Q006_DESC" in filtered_df.columns:
+        display_series = filtered_df["Q006"] + " — " + filtered_df["Q006_DESC"]
+    else:
+        q006_map = enem_dict.get("Q006", {})
+        display_series = filtered_df["Q006"].map(lambda c: f"{c} — {q006_map.get(c, c)}" if c in q006_map else c)
+        
+    renda_counts = display_series.value_counts().reset_index()
+    renda_counts.columns = ["Faixa_Renda", "total_inscritos"]
     
     fig_renda = px.bar(
-        renda_counts.sort_values(by="Q006"),
-        x="Q006",
+        renda_counts.sort_values(by="Faixa_Renda"),
+        x="Faixa_Renda",
         y="total_inscritos",
         color="total_inscritos",
         color_continuous_scale="Blues",
         text_auto=".2s",
-        labels={"Q006": "Faixa de Renda (Q006)", "total_inscritos": "Quantidade de Candidatos"}
+        labels={"Faixa_Renda": "Faixa de Renda Familiar", "total_inscritos": "Quantidade de Candidatos"}
     )
     fig_renda.update_layout(
         template="plotly_white",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        height=400,
+        height=420,
         coloraxis_showscale=False
     )
     st.plotly_chart(fig_renda, use_container_width=True)
-    
-    st.markdown("""
-    > **Legenda Renda Familiar (Q006):**
-    > - **A**: Nenhuma Renda | **B**: Até R$ 1.320,00 | **C**: R$ 1.320,01 a R$ 1.980,00 | **D**: R$ 1.980,01 a R$ 2.640,00
-    > - **E**: R$ 2.640,01 a R$ 3.300,00 | **F**: R$ 3.300,01 a R$ 3.960,00 | **G**: R$ 3.960,01 a R$ 5.280,00 | **H+**: Acima de R$ 5.280,00
-    """)
 
-# TAB 3: DESEMPENHO & NOTAS (TRI) - FASE 3
+    st.divider()
+    
+    # Gráficos Adicionais de Perfil Demográfico (Cor/Raça e Situação de Conclusão)
+    d_col1, d_col2 = st.columns(2)
+    
+    with d_col1:
+        st.subheader("🎨 Distribuição por Cor / Raça")
+        if "TP_COR_RACA_DESC" in filtered_df.columns:
+            raca_counts = filtered_df["TP_COR_RACA_DESC"].value_counts().reset_index()
+            raca_counts.columns = ["Cor_Raca", "total_inscritos"]
+            
+            fig_raca = px.bar(
+                raca_counts.sort_values(by="total_inscritos", ascending=True),
+                x="total_inscritos",
+                y="Cor_Raca",
+                orientation="h",
+                text_auto=".2s",
+                color="total_inscritos",
+                color_continuous_scale="Teal",
+                labels={"total_inscritos": "Candidatos", "Cor_Raca": "Cor / Raça"}
+            )
+            fig_raca.update_layout(
+                template="plotly_white",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                height=380,
+                coloraxis_showscale=False
+            )
+            st.plotly_chart(fig_raca, use_container_width=True)
+            
+    with d_col2:
+        st.subheader("🎓 Situação de Conclusão do Ensino Médio")
+        if "TP_ST_CONCLUSAO_DESC" in filtered_df.columns:
+            st_counts = filtered_df["TP_ST_CONCLUSAO_DESC"].value_counts().reset_index()
+            st_counts.columns = ["Situacao", "total_inscritos"]
+            
+            fig_st = px.bar(
+                st_counts.sort_values(by="total_inscritos", ascending=True),
+                x="total_inscritos",
+                y="Situacao",
+                orientation="h",
+                text_auto=".2s",
+                color="total_inscritos",
+                color_continuous_scale="Purples",
+                labels={"total_inscritos": "Candidatos", "Situacao": "Situação de Conclusão"}
+            )
+            fig_st.update_layout(
+                template="plotly_white",
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                height=380,
+                coloraxis_showscale=False
+            )
+            st.plotly_chart(fig_st, use_container_width=True)
+
+# TAB 3: DESEMPENHO & NOTAS (TRI)
 with tab3:
     st.subheader("📈 Análise de Desempenho e Notas Médias no ENEM 2025")
     
     if df_notas_uf.empty or df_notas_renda.empty:
-        st.info("Dados de desempenho de notas não encontrados. Execute o pipeline de transformação (Fase 2) para gerar os arquivos agregados.")
+        st.info("Dados de desempenho de notas não encontrados. Execute o pipeline de transformação para gerar os arquivos agregados.")
     else:
         # Filtragem das bases agregadas de notas com base nos filtros da barra lateral
         f_notas_uf = df_notas_uf[
@@ -447,10 +534,12 @@ with tab3:
                 
             st.markdown("---")
         
-        # Gráfico 1: Renda vs Desempenho
-        st.subheader("💰 Gráfico 1: Desempenho Médio por Faixa de Renda Familiar (Q006)")
+        # Gráfico 1: Renda vs Desempenho (Com rótulos legíveis do dicionário)
+        st.subheader("💰 Gráfico 1: Desempenho Médio por Faixa de Renda Familiar")
         
         if not f_notas_renda.empty:
+            q006_map = enem_dict.get("Q006", {})
+            
             renda_avg = f_notas_renda.groupby("Q006").apply(
                 lambda g: pd.Series({
                     "Redação": (g["media_redacao"] * g["total_candidatos"]).sum() / g["total_candidatos"].sum() if g["total_candidatos"].sum() > 0 else 0,
@@ -462,16 +551,25 @@ with tab3:
                 include_groups=False
             ).reset_index()
             
-            renda_melted = renda_avg.melt(id_vars=["Q006"], var_name="Prova", value_name="Nota_Media")
+            # Formatação de rótulos descritivos no eixo X
+            renda_avg["Faixa_Renda_Label"] = renda_avg["Q006"].apply(
+                lambda code: f"{code} — {q006_map.get(code, code)}" if code in q006_map else code
+            )
+            
+            renda_melted = renda_avg.melt(
+                id_vars=["Q006", "Faixa_Renda_Label"],
+                var_name="Prova",
+                value_name="Nota_Media"
+            )
             
             fig_renda_notas = px.bar(
                 renda_melted.sort_values(by="Q006"),
-                x="Q006",
+                x="Faixa_Renda_Label",
                 y="Nota_Media",
                 color="Prova",
                 barmode="group",
                 text_auto=".1f",
-                labels={"Q006": "Faixa de Renda (Q006)", "Nota_Media": "Nota Média"},
+                labels={"Faixa_Renda_Label": "Faixa de Renda Familiar", "Nota_Media": "Nota Média"},
                 color_discrete_sequence=["#db2777", "#2563eb", "#059669", "#d97706", "#7c3aed"]
             )
             fig_renda_notas.update_layout(
@@ -566,6 +664,6 @@ with tab4:
 st.markdown("---")
 st.markdown("""
 <div style="text-align: center; color: #64748b; font-size: 0.85rem;">
-    Desenvolvido com PySpark, Streamlit & Plotly — Projeto Integrador (PI4)
+    Desenvolvido com PySpark, Streamlit & Plotly — Projeto Integrador (PI4 Univesp)
 </div>
 """, unsafe_allow_html=True)
