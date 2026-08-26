@@ -111,6 +111,9 @@ Os scripts da pasta `src/data_pipeline/` devem ser executados na ordem abaixo pa
 
 > **Nota:** Certifique-se de colocar os arquivos brutos do ENEM 2025 na pasta `data/raw/` (`PARTICIPANTES_2025.csv`, `RESULTADOS_2025.csv` e `Dicionário_Microdados_Enem_2025.xlsx`).
 
+**Base de dados do ENEM 2025:** [Dados do ENEM 2025](https://www.gov.br/inep/pt-br/acesso-a-informacao/dados-abertos/microdados/enem)
+
+
 1. **Ingestão dos dados CSV para Parquet:**
    ```bash
    python src/data_pipeline/ingest.py

@@ -1,6 +1,6 @@
 # Plano Mestre de Tarefas — Projeto Integrador IV (PI4 Univesp)
 
-> **Fonte Única da Verdade** para o acompanhamento do desenvolvimento do pipeline de dados, dicionários, inteligência artificial e dashboard do ENEM 2025.
+> **Fonte Única da Verdade** para o acompanhamento do desenvolvimento do pipeline de dados, dicionários, inteligência artificial e dashboard do ENEM plurianual.
 
 ---
 
@@ -9,7 +9,7 @@
 - **Fase 2 (Dicionário de Dados):** Concluída `[100%]`
 - **Fase 3 (Machine Learning):** Concluída `[100%]`
 - **Fase 4 (Dashboard Streamlit):** Concluída `[100%]`
-- **Fase 5 (Expansão & Séries Históricas):** Em planejamento `[0%]`
+- **Fase 5 (Série Histórica, Redes Detalhadas, Cruzamentos Avançados & Metodologia COFRE):** Em planejamento ativo `[0%]`
 
 ---
 
@@ -42,7 +42,10 @@
 - [x] **Aba 4 (Machine Learning & IA):** Gauges e cartões de métricas do modelo preditivo PySpark ML.
 - [x] **Leitura Integrada de Colunas Descritivas:** Atualizar os seletores e gráficos do Streamlit para consumir diretamente as colunas enriquecidas (`_DESC`), garantindo amigabilidade visual sem comprometer as agregações.
 
-### Fase 5 — Expansão Futura e Séries Históricas
-- [ ] **Análise de Itens de Prova:** Processar o arquivo `ITENS_PROVA_2025.csv` para calcular taxas de acerto e nível de dificuldade por questão.
-- [ ] **Séries Históricas:** Expandir a arquitetura do pipeline para suportar ingestão e comparação temporal com edições anteriores do ENEM (ex: 2022-2024).
-- [ ] **Conteinerização & Deploy:** Criar `Dockerfile` e arquivos de configuração para deploy em nuvem (Render/AWS/GCP).
+### Fase 5 — Expansão Plurianual, Redes Detalhadas, Séries Históricas & Governança (Metodologia COFRE)
+- [x] **Fase 5.0 - Arquitetura Plurianual (5 Anos):** Expandir o pipeline de dados para suportar a ingestão e unificação de uma janela de 5 anos, gerando arquivos Parquet otimizados por ano.
+- [x] **Fase 5.1 - Granularidade de Redes de Ensino (`TP_DEPENDENCIA_ADM_ESC`):** Desmembrar a categoria pública em **Federal, Estadual e Municipal**, contrapondo-a com a rede **Privada** para análises comparativas aprofundadas de gestão e desempenho.
+- [ ] **Fase 5.2 - Raio-X Socioeconômico Avançado (`Q006` x `Q007` x Escola):** Implementar cruzamentos de impacto acadêmico avaliando o retorno educacional pela renda familiar, o peso da autonomia financeira (estudantes que trabalham) cruzado com o tipo de dependência administrativa da escola.
+- [ ] **Fase 5.3 - Geopolítica, Regiões e Séries Temporais (Dashboard):** Desenvolver visualizações geográficas por Estado/Região e gráficos de linhas temporais para demonstrar a evolução plurianual do desempenho educacional brasileiro.
+- [ ] **Fase 5.4 - Governança de Prompts e Tarefas (Metodologia COFRE):** Padronizar a execução de todas as tarefas de código, prompts e documentação sob a metodologia **COFRE** (Contexto, Objetivo, Formato, Regras e Execução).
+- [ ] **Fase 5.5 - Conteinerização & Deploy Contínuo (CI/CD):** Atualizar configurações para garantir o fluxo de deploy obrigatório e automatizado (`dev` ➔ `hom` ➔ `prd`), validando cada entrega na nuvem.

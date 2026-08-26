@@ -128,6 +128,9 @@ def load_data():
     insights_path = "data/processed/enem_2025_ml_insights.json"
     notas_uf_path = "data/processed/enem_2025_agg_notas_uf_parquet"
     notas_renda_path = "data/processed/enem_2025_agg_notas_renda_parquet"
+    rede_path = "data/processed/enem_2025_agg_rede_ensino_parquet"
+    socio_avancado_path = "data/processed/enem_2025_agg_socio_avancado_parquet"
+    socio_escola_path = "data/processed/enem_2025_agg_socio_escola_parquet"
     
     enem_dict = {}
     if os.path.exists(dict_path):
@@ -149,7 +152,8 @@ def load_data():
                 'Q007', 'Q007_DESC',
                 'TP_COR_RACA', 'TP_COR_RACA_DESC',
                 'TP_ST_CONCLUSAO', 'TP_ST_CONCLUSAO_DESC',
-                'TP_FAIXA_ETARIA', 'TP_FAIXA_ETARIA_DESC'
+                'TP_FAIXA_ETARIA', 'TP_FAIXA_ETARIA_DESC',
+                'TP_DEPENDENCIA_ADM_ESC', 'TP_DEPENDENCIA_ADM_ESC_DESC'
             ]
             cols_to_load = [c for c in desired_cols if c in available_cols]
             df = pd.read_parquet(enriched_parquet_path, columns=cols_to_load)
@@ -162,15 +166,18 @@ def load_data():
 
     df_notas_uf = pd.read_parquet(notas_uf_path) if os.path.exists(notas_uf_path) else pd.DataFrame()
     df_notas_renda = pd.read_parquet(notas_renda_path) if os.path.exists(notas_renda_path) else pd.DataFrame()
+    df_rede = pd.read_parquet(rede_path) if os.path.exists(rede_path) else pd.DataFrame()
+    df_socio_avancado = pd.read_parquet(socio_avancado_path) if os.path.exists(socio_avancado_path) else pd.DataFrame()
+    df_socio_escola = pd.read_parquet(socio_escola_path) if os.path.exists(socio_escola_path) else pd.DataFrame()
         
     ml_insights = {}
     if os.path.exists(insights_path):
         with open(insights_path, "r", encoding="utf-8") as f:
             ml_insights = json.load(f)
             
-    return df, df_notas_uf, df_notas_renda, ml_insights, enem_dict
+    return df, df_notas_uf, df_notas_renda, df_rede, df_socio_avancado, df_socio_escola, ml_insights, enem_dict
 
-df_raw, df_notas_uf, df_notas_renda, ml_insights, enem_dict = load_data()
+df_raw, df_notas_uf, df_notas_renda, df_rede, df_socio_avancado, df_socio_escola, ml_insights, enem_dict = load_data()
 
 # Header da Aplicação
 st.markdown("""
@@ -178,7 +185,7 @@ st.markdown("""
     <div>
         <span class="badge-primary">Projeto Integrador (PI4 Univesp)</span>
         <h1 style="margin-top: 10px; margin-bottom: 0; font-size: 2.2rem;">🎓 ENEM 2025 — Analytics & AI Dashboard</h1>
-        <p style="color: #475569; font-size: 1.05rem; margin-top: 5px;">Visão executiva, geográfica, socioeconômica e preditiva enriquecida via dicionário de dados oficial</p>
+        <p style="color: #475569; font-size: 1.05rem; margin-top: 5px;">Visão executiva, geográfica, socioeconômica, redes de ensino detalhadas e preditiva</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -187,7 +194,6 @@ if df_raw.empty:
     st.error("Erro: Dados do ENEM não encontrados.")
     st.stop()
 
-# Mapeamento do tipo de candidato mantendo integridade da lógica de filtragem
 treineiro_map = {"Não Treineiro": "0", "Treineiro": "1"}
 
 # --- PAINEL LATERAL (SIDEBAR) COM EXPANDERS ---
@@ -223,7 +229,6 @@ if not selected_ufs or not selected_treineiro_labels:
 
 selected_treineiro_values = [treineiro_map[label] for label in selected_treineiro_labels]
 
-# Aplicação rigorosa da filtragem dos dados que alimentam os gráficos
 filtered_df = df_raw[
     (df_raw["SG_UF_PROVA"].isin(selected_ufs)) &
     (df_raw["IN_TREINEIRO"].isin(selected_treineiro_values))
@@ -234,10 +239,7 @@ c1, c2, c3, c4 = st.columns(4)
 total_inscritos = len(filtered_df)
 total_treineiros = len(filtered_df[filtered_df["IN_TREINEIRO"] == "1"])
 total_nao_treineiros = len(filtered_df[filtered_df["IN_TREINEIRO"] == "0"])
-pct_treineiros = (total_treineiros / total_inscritos * 100) if total_inscritos > 0 else 0
-
 top_uf = filtered_df["SG_UF_PROVA"].value_counts().idxmax() if total_inscritos > 0 else "N/A"
-top_uf_count = filtered_df["SG_UF_PROVA"].value_counts().max() if total_inscritos > 0 else 0
 
 with c1:
     st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Total de Inscritos (Filtrados)</div><div class="metric-value-clean">{total_inscritos:,.0f}</div></div>', unsafe_allow_html=True)
@@ -248,10 +250,11 @@ with c3:
 with c4:
     st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Estado Líder</div><div class="metric-value-clean">{top_uf}</div></div>', unsafe_allow_html=True)
 
-# Abas de visualização
-tab1, tab2, tab3, tab4 = st.tabs([
+# Abas de visualização atualizadas com Redes de Ensino e Raio-X Avançado
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 Panorama Geográfico (UF)",
     "💰 Perfil Socioeconômico & Demográfico",
+    "🏫 Redes de Ensino & Impacto",
     "📈 Desempenho & Notas (TRI)",
     "🤖 Machine Learning & IA"
 ])
@@ -267,7 +270,6 @@ with tab1:
         st.plotly_chart(fig_uf, use_container_width=True)
     with col_right:
         st.subheader("Distribuição por Sexo")
-        # Leitura garantida da coluna descritiva _DESC com fallback
         sex_col = "TP_SEXO_DESC" if "TP_SEXO_DESC" in filtered_df.columns else "TP_SEXO"
         sex_counts = filtered_df[sex_col].value_counts()
         fig_pie = go.Figure(data=[go.Pie(labels=sex_counts.index.tolist(), values=sex_counts.values.tolist(), hole=.5, marker_colors=["#ec4899", "#2563eb"])])
@@ -276,7 +278,6 @@ with tab1:
 
 with tab2:
     st.subheader("💰 Distribuição por Faixa de Renda Familiar")
-    # Uso prioritário da coluna descritiva enriquecida Q006_DESC
     if "Q006_DESC" in filtered_df.columns and "Q006" in filtered_df.columns:
         display_series = filtered_df["Q006"] + " — " + filtered_df["Q006_DESC"]
     else:
@@ -289,8 +290,52 @@ with tab2:
     st.plotly_chart(fig_renda, use_container_width=True)
 
 with tab3:
+    st.subheader("🏫 Análise Detalhada por Rede de Ensino (Fase 5.1 & 5.2)")
+    if df_rede.empty:
+        st.info("Dados de agregação por rede de ensino não encontrados. Execute o transform.py atualizado.")
+    else:
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            st.markdown("##### Candidatos por Dependência Administrativa")
+            fig_rede = px.bar(df_rede, x="TP_DEPENDENCIA_ADM_ESC_DESC", y="total_candidatos", color="TP_DEPENDENCIA_ADM_ESC_DESC", text_auto=".2s")
+            fig_rede.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380, showlegend=False)
+            st.plotly_chart(fig_rede, use_container_width=True)
+        with col_r2:
+            st.markdown("##### Média de Notas de Matemática por Rede")
+            fig_rede_mat = px.bar(df_rede, x="TP_DEPENDENCIA_ADM_ESC_DESC", y="media_matematica", color="TP_DEPENDENCIA_ADM_ESC_DESC", text_auto=".1f")
+            fig_rede_mat.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380, showlegend=False)
+            st.plotly_chart(fig_rede_mat, use_container_width=True)
+
+    # Inclusão da visualização da Fase 5.2: Raio-X Socioeconômico Avançado
+    st.markdown("---")
+    st.markdown("##### 🔬 Raio-X Avançado: Impacto da Renda e Autonomia na Escola (`Q006` x `Q007`)")
+    
+    if not df_socio_escola.empty:
+        selected_rede_filter = st.selectbox(
+            "Filtrar por Dependência Administrativa da Escola:",
+            options=df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique()
+        )
+        df_filtered_socio = df_socio_escola[df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"] == selected_rede_filter]
+        
+        fig_socio = px.scatter(
+            df_filtered_socio,
+            x="Q006_DESC",
+            y="media_matematica",
+            size="total_candidatos",
+            color="Q007_DESC",
+            hover_name="Q006_DESC",
+            title=f"Desempenho em Matemática vs Faixa de Renda e Suporte/Trabalho ({selected_rede_filter})",
+            labels={"Q006_DESC": "Faixa de Renda Familiar", "media_matematica": "Média de Matemática", "Q007_DESC": "Suporte / Autonomia (Q007)"}
+        )
+        fig_socio.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450)
+        fig_socio.update_xaxes(tickangle=45)
+        st.plotly_chart(fig_socio, use_container_width=True)
+    else:
+        st.info("Execute o transform.py atualizado para gerar a base agregada da Fase 5.2.")
+
+with tab4:
     st.subheader("📈 Análise de Desempenho e Notas Médias no ENEM 2025")
-    if df_notas_uf.empty or df_notas_renda.empty:
+    if df_notas_uf.empty:
         st.info("Dados agregados de notas não encontrados.")
     else:
         f_notas_uf = df_notas_uf[(df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)) & (df_notas_uf["IN_TREINEIRO"].isin(selected_treineiro_values))]
@@ -302,7 +347,7 @@ with tab3:
             with n1: st.metric("Redação (Média)", f"{avg_redacao:.1f}")
             with n2: st.metric("Matemática (Média)", f"{avg_mt:.1f}")
 
-with tab4:
+with tab5:
     st.subheader("🧠 Performance do Modelo Preditivo")
     if ml_insights and "modelo_machine_learning" in ml_insights:
         metrics = ml_insights["modelo_machine_learning"]["metricas_avaliacao"]

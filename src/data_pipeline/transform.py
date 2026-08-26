@@ -1,181 +1,198 @@
-"""
-Transformation and Enrichment Pipeline (PySpark) for ENEM 2025 data.
-
-Joins PARTICIPANTES and RESULTADOS datasets, enriches categorical columns
-using human-readable descriptions from data/dictionary/enem_2025_dict.json,
-and generates aggregated statistical views for states and income tiers.
-"""
-
-import json
-
 import os
-from itertools import chain
-from pyspark.sql import DataFrame, SparkSession
-from pyspark.sql.functions import (
-    avg, col, count, create_map, lit, coalesce,
-    monotonically_increasing_id, round as spark_round, when
-)
+import argparse
+from pyspark.sql import SparkSession
+import pyspark.sql.functions as F
+from pyspark.sql.types import DoubleType
 
-
-def enrich_dataframe_with_dictionary(
-    df: DataFrame,
-    dict_path: str = "data/dictionary/enem_2025_dict.json"
-) -> DataFrame:
-    """
-    Enriches a PySpark DataFrame with human-readable label columns (_DESC)
-    based on the JSON dictionary mapping.
-
-    Args:
-        df: Input PySpark DataFrame.
-        dict_path: Path to the JSON dictionary file.
-
-    Returns:
-        DataFrame: Enriched PySpark DataFrame with new descriptive columns.
-    """
-    if not os.path.exists(dict_path):
-        print(f"Warning: Dictionary JSON not found at '{dict_path}'. Skipping dictionary enrichment.")
-        return df
-
-    try:
-        with open(dict_path, "r", encoding="utf-8") as f:
-            dictionary = json.load(f)
-    except Exception as e:
-        print(f"Warning: Failed to load dictionary JSON from '{dict_path}'. Error: {e}")
-        return df
-
-    print(f"Loaded dictionary from '{dict_path}' with {len(dictionary)} variables.")
-    enriched_cols = []
-
-    for col_name in df.columns:
-        if col_name in dictionary and dictionary[col_name]:
-            mapping = dictionary[col_name]
-            try:
-                # Flatten dictionary key-value items into alternating literal expressions for create_map
-                kv_literals = [lit(str(x)) for x in chain(*mapping.items())]
-                map_expr = create_map(kv_literals)
-                
-                desc_col_name = f"{col_name}_DESC"
-                # Map column value to readable label; fallback to original string if unmapped
-                df = df.withColumn(desc_col_name, coalesce(map_expr[col(col_name)], col(col_name)))
-                enriched_cols.append(desc_col_name)
-            except Exception as ex:
-                print(f"Warning: Could not enrich column '{col_name}'. Error: {ex}")
-
-    print(f"Successfully enriched {len(enriched_cols)} columns with readable descriptions.")
-    if enriched_cols:
-        print(f"Enriched columns created: {', '.join(sorted(enriched_cols[:10]))}...")
-
-    return df
-
-
-def transform_enem_data():
-    """
-    Realiza o Join entre PARTICIPANTES e RESULTADOS (Notas) por NU_INSCRICAO/row_id,
-    aplica o enriquecimento com o dicionário de dados (enem_2025_dict.json),
-    gera o dataset enriquecido (enem_2025_enriched_parquet) e as visões agregadas.
-    """
-    spark = SparkSession.builder \
-        .appName("EnemDataTransformation") \
-        .config("spark.driver.memory", "4g") \
-        .config("spark.sql.autoBroadcastJoinThreshold", "-1") \
-        .getOrCreate()
+def run_transformation(spark: SparkSession, dict_path: str = "enem_2025_dict.json"):
+    print("Iniciando pipeline de transformação e enriquecimento de dados...")
 
     part_input_path = "data/processed/enem_2025_cleaned_parquet"
     res_input_path = "data/processed/enem_2025_resultados_parquet"
     
     enriched_output_path = "data/processed/enem_2025_enriched_parquet"
-    output_uf_path = "data/processed/enem_2025_agg_uf_parquet"
-    output_renda_path = "data/processed/enem_2025_agg_renda_uf_parquet"
-    output_notas_uf_path = "data/processed/enem_2025_agg_notas_uf_parquet"
-    output_notas_renda_path = "data/processed/enem_2025_agg_notas_renda_parquet"
+    output_rede_path = "data/processed/enem_2025_agg_rede_ensino_parquet"
+
+    if not os.path.exists(part_input_path):
+        raise FileNotFoundError(f"Dataset de participantes não encontrado em: {part_input_path}. Execute o ingest.py primeiro.")
 
     print(f"Lendo dataset de participantes: {part_input_path}...")
     df_part = spark.read.parquet(part_input_path)
 
-    print(f"Lendo dataset de resultados (notas): {res_input_path}...")
-    df_res = spark.read.parquet(res_input_path)
-
-    # 1. Alinhamento e Join entre PARTICIPANTES e RESULTADOS
-    print("Realizando Join entre PARTICIPANTES e RESULTADOS por chave de inscrição/sequencial...")
-    score_cols = ['NU_NOTA_CN', 'NU_NOTA_CH', 'NU_NOTA_LC', 'NU_NOTA_MT', 'NU_NOTA_REDACAO']
-    res_select_cols = [c for c in score_cols if c in df_res.columns]
-
-    if 'NU_INSCRICAO' in df_res.columns:
-        df_res_sub = df_res.select(['NU_INSCRICAO'] + res_select_cols)
-        df_joined = df_part.join(df_res_sub, on="NU_INSCRICAO", how="inner")
+    df_res = None
+    if os.path.exists(res_input_path):
+        print(f"Lendo dataset de resultados (notas): {res_input_path}...")
+        df_res = spark.read.parquet(res_input_path)
     else:
-        df_part_indexed = df_part.withColumn("row_id", monotonically_increasing_id())
-        df_res_indexed = df_res.select(res_select_cols).withColumn("row_id", monotonically_increasing_id())
-        df_joined = df_part_indexed.join(df_res_indexed, on="row_id", how="inner").drop("row_id")
+        raise FileNotFoundError(f"Dataset de resultados não encontrado em {res_input_path}. As notas são obrigatórias para este gráfico.")
 
-    # Conversão das colunas de notas para tipo Numérico (Double)
-    for score_col in score_cols:
-        if score_col in df_joined.columns:
-            df_joined = df_joined.withColumn(score_col, col(score_col).cast("double"))
+    # Converte notas para Double
+    nota_cols = ['NU_NOTA_MT', 'NU_NOTA_REDACAO', 'NU_NOTA_CN', 'NU_NOTA_CH', 'NU_NOTA_LC']
+    for c in nota_cols:
+        if c in df_res.columns:
+            df_res = df_res.withColumn(c, F.col(c).cast(DoubleType()))
 
-    total_records = df_joined.count()
-    print(f"Dataset unificado (Join) concluído com sucesso. Total de registros: {total_records}")
+    # MAPEAMENTO DINÂMICO DE CHAVES
+    left_key = "NU_INSCRICAO" if "NU_INSCRICAO" in df_part.columns else "NU_SEQUENCIAL"
+    right_key = "NU_SEQUENCIAL" if "NU_SEQUENCIAL" in df_res.columns else "NU_INSCRICAO"
 
-    # 2. Enriquecimento dos Dados usando o Dicionário JSON
-    print("Aplicando enriquecimento de dicionário com nomes descritivos (_DESC)...")
-    df_joined = enrich_dataframe_with_dictionary(df_joined)
+    if left_key not in df_part.columns or right_key not in df_res.columns:
+        raise ValueError(f"Erro crítico: Não foi possível identificar as chaves de cruzamento compatíveis entre os datasets.")
 
-    # Salva o dataset enriquecido consolidado em Parquet
+    print(f"Realizando join utilizando chaves compatíveis -> Participantes ({left_key}) <-> Resultados ({right_key})")
+    
+    if left_key != right_key:
+        df_res = df_res.withColumnRenamed(right_key, left_key)
+        join_key = left_key
+    else:
+        join_key = left_key
+
+    res_cols = [join_key] + [c for c in nota_cols if c in df_res.columns]
+    
+    df_joined = df_part.join(df_res.select(*res_cols), on=join_key, how="left")
+    df_joined = df_joined.repartition(32)
+
+    # Descrições textuais padrão para variáveis categóricas
+    if "TP_SEXO" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "TP_SEXO_DESC",
+            F.when(F.col("TP_SEXO") == "M", "Masculino")
+             .when(F.col("TP_SEXO") == "F", "Feminino")
+             .otherwise("Não Informado")
+        )
+
+    if "IN_TREINEIRO" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "IN_TREINEIRO_DESC",
+            F.when(F.col("IN_TREINEIRO") == 1, "Treineiro")
+             .otherwise("Não Treineiro")
+        )
+
+    # Identificação dinâmica e segura da coluna de dependência administrativa / tipo de escola
+    colunas_upper = [c.upper().strip() for c in df_joined.columns]
+    dep_col = None
+    tipo_mapeamento = None
+    
+    potential_cols = ["TP_ESCOLA", "TP_DEPENDENCIA_ADM_ESC", "TP_DEPENDENCIA_ADM"]
+    for p in potential_cols:
+        if p in colunas_upper:
+            dep_col = df_joined.columns[colunas_upper.index(p)]
+            tipo_mapeamento = "tp_escola" if p == "TP_ESCOLA" else "tp_dependencia"
+            break
+
+    if dep_col:
+        print(f"\n[SUCESSO] Coluna de rede/escola identificada: '{dep_col}' (Tipo: {tipo_mapeamento})")
+        if tipo_mapeamento == "tp_escola":
+            df_joined = df_joined.withColumn(
+                "TP_DEPENDENCIA_ADM_ESC_DESC",
+                F.when(F.col(dep_col).isin(2, "2", 2.0), "Pública")
+                 .when(F.col(dep_col).isin(3, "3", 3.0), "Privada")
+                 .otherwise("Não Informado")
+            )
+        else:
+            df_joined = df_joined.withColumn(
+                "TP_DEPENDENCIA_ADM_ESC_DESC",
+                F.when(F.col(dep_col).isin(1, "1", 1.0), "Federal")
+                 .when(F.col(dep_col).isin(2, "2", 2.0), "Estadual")
+                 .when(F.col(dep_col).isin(3, "3", 3.0), "Municipal")
+                 .when(F.col(dep_col).isin(4, "4", 4.0), "Privada")
+                 .otherwise("Não Informado")
+            )
+    else:
+        print(f"\n[ALERTA CRÍTICO] Nenhuma coluna de escola encontrada nas colunas: {df_joined.columns}")
+        df_joined = df_joined.withColumn("TP_DEPENDENCIA_ADM_ESC_DESC", F.lit("Não Informado"))
+
+    # === FASE 5.2: ENRIQUECIMENTO SOCIOECONÔMICO AVANÇADO (Q006 x Q007 x Escola) ===
+    print("Aplicando mapeamento avançado para Renda (Q006) e Trabalho/Autonomia (Q007)...")
+    
+    if "Q006" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "Q006_DESC",
+            F.when(F.col("Q006") == "A", "Nenhuma renda")
+             .when(F.col("Q006") == "B", "Até R$ 1.518,00")
+             .when(F.col("Q006") == "C", "De R$ 1.518,01 até R$ 2.277,00")
+             .when(F.col("Q006") == "D", "De R$ 2.277,01 até R$ 3.036,00")
+             .when(F.col("Q006") == "E", "De R$ 3.036,01 até R$ 3.795,00")
+             .when(F.col("Q006") == "F", "De R$ 3.795,01 até R$ 4.554,00")
+             .when(F.col("Q006") == "G", "De R$ 4.554,01 até R$ 6.072,00")
+             .when(F.col("Q006") == "H", "De R$ 6.072,01 até R$ 7.590,00")
+             .when(F.col("Q006") == "I", "De R$ 7.590,01 até R$ 9.108,00")
+             .when(F.col("Q006") == "J", "De R$ 9.108,01 até R$ 10.626,00")
+             .when(F.col("Q006") == "K", "De R$ 10.626,01 até R$ 12.144,00")
+             .when(F.col("Q006") == "L", "De R$ 12.144,01 até R$ 13.662,00")
+             .when(F.col("Q006") == "M", "De R$ 13.662,01 até R$ 15.180,00")
+             .when(F.col("Q006") == "N", "De R$ 15.180,01 até R$ 18.216,00")
+             .when(F.col("Q006") == "O", "De R$ 18.216,01 até R$ 22.770,00")
+             .when(F.col("Q006") == "P", "De R$ 22.770,01 até R$ 30.360,00")
+             .when(F.col("Q006") == "Q", "Acima de R$ 30.360,00")
+             .otherwise("Não Informado")
+        )
+    else:
+        df_joined = df_joined.withColumn("Q006_DESC", F.lit("Não Informado"))
+
+    if "Q007" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "Q007_DESC",
+            F.when(F.col("Q007") == "A", "Não")
+             .when(F.col("Q007") == "B", "Sim, um ou dois dias por semana")
+             .when(F.col("Q007") == "C", "Sim, três ou quatro dias por semana")
+             .when(F.col("Q007") == "D", "Sim, pelo menos cinco dias por semana")
+             .otherwise("Não Informado")
+        )
+    else:
+        df_joined = df_joined.withColumn("Q007_DESC", F.lit("Não Informado"))
+
     print(f"Salvando dataset enriquecido em: {enriched_output_path}...")
     df_joined.write.mode("overwrite").parquet(enriched_output_path)
 
-    # 3. Agregação Geral Demográfica por Estado (UF)
-    print("Calculando agregações estatísticas por Estado (UF)...")
-    agg_uf = df_joined.groupBy("SG_UF_PROVA").agg(
-        count("*").alias("total_inscritos"),
-        count(when(col("IN_TREINEIRO") == "1", 1)).alias("total_treineiros"),
-        count(when(col("TP_SEXO") == "F", 1)).alias("total_feminino"),
-        count(when(col("TP_SEXO") == "M", 1)).alias("total_masculino")
-    ).withColumn(
-        "pct_treineiros",
-        spark_round((col("total_treineiros") / col("total_inscritos")) * 100, 2)
-    ).orderBy(col("total_inscritos").desc())
+    # Agregação por Rede de Ensino
+    print("Gerando tabelas agregadas por rede de ensino...")
+    agg_rede = df_joined.groupBy("TP_DEPENDENCIA_ADM_ESC_DESC").agg(
+        F.count("*").alias("total_candidatos"),
+        F.avg("NU_NOTA_MT").alias("media_matematica"),
+        F.avg("NU_NOTA_REDACAO").alias("media_redacao")
+    )
+    agg_rede.write.mode("overwrite").parquet(output_rede_path)
+    print(f"Salvando agregação por Rede de Ensino em: {output_rede_path}...")
 
-    agg_uf.write.mode("overwrite").parquet(output_uf_path)
+    # Agregação Avançada da Fase 5.2
+    output_socio_escola_path = "data/processed/enem_2025_agg_socio_escola_parquet"
+    print("Gerando agregação avançada (Fase 5.2): Renda (Q006_DESC) x Autonomia (Q007_DESC) x Escola...")
+    agg_socio_escola = df_joined.groupBy(
+        "TP_DEPENDENCIA_ADM_ESC_DESC", 
+        "Q006_DESC", 
+        "Q007_DESC"
+    ).agg(
+        F.count("*").alias("total_candidatos"),
+        F.avg("NU_NOTA_MT").alias("media_matematica"),
+        F.avg("NU_NOTA_REDACAO").alias("media_redacao"),
+        F.avg("NU_NOTA_CN").alias("media_cn"),
+        F.avg("NU_NOTA_CH").alias("media_ch"),
+        F.avg("NU_NOTA_LC").alias("media_lc")
+    )
+    agg_socio_escola.write.mode("overwrite").parquet(output_socio_escola_path)
+    print(f"Salvando agregação avançada socioeconômica em: {output_socio_escola_path}...")
 
-    # 4. Agregação Socioeconômica por UF e Faixa de Renda (Q006)
-    print("Calculando agregações por Faixa de Renda (Q006) e Estado...")
-    agg_renda_uf = df_joined.groupBy("SG_UF_PROVA", "Q006").agg(
-        count("*").alias("total_inscritos")
-    ).orderBy("SG_UF_PROVA", "Q006")
-
-    agg_renda_uf.write.mode("overwrite").parquet(output_renda_path)
-
-    # 5. Agregação de Médias de Notas por Estado e Status de Treineiro
-    print("Calculando médias de notas por Estado e Status de Treineiro...")
-    agg_notas_uf = df_joined.groupBy("SG_UF_PROVA", "IN_TREINEIRO").agg(
-        count("*").alias("total_candidatos"),
-        spark_round(avg("NU_NOTA_CN"), 2).alias("media_cn"),
-        spark_round(avg("NU_NOTA_CH"), 2).alias("media_ch"),
-        spark_round(avg("NU_NOTA_LC"), 2).alias("media_lc"),
-        spark_round(avg("NU_NOTA_MT"), 2).alias("media_mt"),
-        spark_round(avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
-    ).orderBy("SG_UF_PROVA", "IN_TREINEIRO")
-
-    print(f"Salvando médias de notas por UF em: {output_notas_uf_path}...")
-    agg_notas_uf.write.mode("overwrite").parquet(output_notas_uf_path)
-
-    # 6. Agregação de Médias de Notas por Faixa de Renda (Q006) e Status de Treineiro
-    print("Calculando médias de notas por Faixa de Renda (Q006)...")
-    agg_notas_renda = df_joined.groupBy("Q006", "IN_TREINEIRO").agg(
-        count("*").alias("total_candidatos"),
-        spark_round(avg("NU_NOTA_CN"), 2).alias("media_cn"),
-        spark_round(avg("NU_NOTA_CH"), 2).alias("media_ch"),
-        spark_round(avg("NU_NOTA_LC"), 2).alias("media_lc"),
-        spark_round(avg("NU_NOTA_MT"), 2).alias("media_mt"),
-        spark_round(avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
-    ).orderBy("Q006", "IN_TREINEIRO")
-
-    print(f"Salvando médias de notas por Renda em: {output_notas_renda_path}...")
-    agg_notas_renda.write.mode("overwrite").parquet(output_notas_renda_path)
-
-    print("Pipeline de transformação, enriquecimento e agregados concluído com sucesso!")
-
+    print("Pipeline de transformação executado com sucesso!")
 
 if __name__ == "__main__":
-    transform_enem_data()
+    parser = argparse.ArgumentParser(description="Transform script for ENEM 2025 pipeline")
+    parser.add_argument("--dict_path", type=str, default="enem_2025_dict.json", help="Path to dictionary JSON")
+    args = parser.parse_args()
+
+    spark = SparkSession.builder \
+        .appName("ENEM_2025_Transform") \
+        .config("spark.driver.memory", "4g") \
+        .config("spark.executor.memory", "4g") \
+        .config("spark.driver.maxResultSize", "2g") \
+        .config("spark.sql.shuffle.partitions", "32") \
+        .config("spark.sql.adaptive.enabled", "true") \
+        .config("spark.memory.fraction", "0.6") \
+        .config("spark.memory.storageFraction", "0.3") \
+        .config("spark.local.dir", "data/tmp_spill") \
+        .getOrCreate()
+
+    try:
+        run_transformation(spark, dict_path=args.dict_path)
+    finally:
+        spark.stop()
