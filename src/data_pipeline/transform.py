@@ -4,14 +4,14 @@ from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
 from pyspark.sql.types import DoubleType
 
-def run_transformation(spark: SparkSession, dict_path: str = "enem_2025_dict.json"):
-    print("Iniciando pipeline de transformação e enriquecimento de dados...")
+def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str = None):
+    print(f"Iniciando pipeline de transformação e enriquecimento de dados para {year}...")
 
-    part_input_path = "data/processed/enem_2025_cleaned_parquet"
-    res_input_path = "data/processed/enem_2025_resultados_parquet"
+    part_input_path = f"data/processed/enem_{year}_cleaned_parquet"
+    res_input_path = f"data/processed/enem_{year}_resultados_parquet"
     
-    enriched_output_path = "data/processed/enem_2025_enriched_parquet"
-    output_rede_path = "data/processed/enem_2025_agg_rede_ensino_parquet"
+    enriched_output_path = f"data/processed/enem_{year}_enriched_parquet"
+    output_rede_path = f"data/processed/enem_{year}_agg_rede_ensino_parquet"
 
     if not os.path.exists(part_input_path):
         raise FileNotFoundError(f"Dataset de participantes não encontrado em: {part_input_path}. Execute o ingest.py primeiro.")
@@ -156,7 +156,7 @@ def run_transformation(spark: SparkSession, dict_path: str = "enem_2025_dict.jso
     print(f"Salvando agregação por Rede de Ensino em: {output_rede_path}...")
 
     # Agregação Avançada da Fase 5.2
-    output_socio_escola_path = "data/processed/enem_2025_agg_socio_escola_parquet"
+    output_socio_escola_path = f"data/processed/enem_{year}_agg_socio_escola_parquet"
     print("Gerando agregação avançada (Fase 5.2): Renda (Q006_DESC) x Autonomia (Q007_DESC) x Escola...")
     agg_socio_escola = df_joined.groupBy(
         "TP_DEPENDENCIA_ADM_ESC_DESC", 
@@ -193,6 +193,7 @@ if __name__ == "__main__":
         .getOrCreate()
 
     try:
-        run_transformation(spark, dict_path=args.dict_path)
+        for target_year in [2024, 2025]:
+            run_transformation(spark, year=target_year, dict_path=args.dict_path)
     finally:
         spark.stop()
