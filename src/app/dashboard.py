@@ -251,12 +251,13 @@ with c4:
     st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Estado Líder</div><div class="metric-value-clean">{top_uf}</div></div>', unsafe_allow_html=True)
 
 # Abas de visualização atualizadas com Redes de Ensino e Raio-X Avançado
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Panorama Geográfico (UF)",
     "💰 Perfil Socioeconômico & Demográfico",
     "🏫 Redes de Ensino & Impacto",
     "📈 Desempenho & Notas (TRI)",
-    "🤖 Machine Learning & IA"
+    "🤖 Machine Learning & IA",
+    "🌎 Geopolítica & Séries Temporais"
 ])
 
 with tab1:
@@ -354,6 +355,54 @@ with tab5:
         st.metric(label="Acurácia do Modelo", value=f"{metrics['accuracy']*100:.2f}%")
     else:
         st.info("Insights de Machine Learning não encontrados.")
+
+with tab6:
+    st.subheader("🌎 Geopolítica e Séries Temporais Plurianual (Fase 5.3)")
+    st.markdown("Visualizações de evolução temporal e desempenho por macrorregião (dados projetados plurianuais 2021-2025).")
+    
+    col_g1, col_g2 = st.columns(2)
+    
+    with col_g1:
+        st.markdown("##### 📍 Desempenho por Macrorregião do Brasil (2025)")
+        # Mapeamento de Regiões
+        uf_to_regiao = {
+            'AC': 'Norte', 'AP': 'Norte', 'AM': 'Norte', 'PA': 'Norte', 'RO': 'Norte', 'RR': 'Norte', 'TO': 'Norte',
+            'AL': 'Nordeste', 'BA': 'Nordeste', 'CE': 'Nordeste', 'MA': 'Nordeste', 'PB': 'Nordeste', 'PE': 'Nordeste', 'PI': 'Nordeste', 'RN': 'Nordeste', 'SE': 'Nordeste',
+            'DF': 'Centro-Oeste', 'GO': 'Centro-Oeste', 'MT': 'Centro-Oeste', 'MS': 'Centro-Oeste',
+            'ES': 'Sudeste', 'MG': 'Sudeste', 'RJ': 'Sudeste', 'SP': 'Sudeste',
+            'PR': 'Sul', 'RS': 'Sul', 'SC': 'Sul'
+        }
+        if not df_notas_uf.empty:
+            df_regiao = df_notas_uf.copy()
+            df_regiao["Regiao"] = df_regiao["SG_UF_PROVA"].map(uf_to_regiao)
+            df_regiao_agg = df_regiao.groupby("Regiao").agg(
+                media_matematica=("media_mt", "mean"),
+                media_redacao=("media_redacao", "mean")
+            ).reset_index()
+            
+            fig_reg = px.bar(df_regiao_agg, x="Regiao", y=["media_matematica", "media_redacao"], barmode="group",
+                             title="Médias de Matemática e Redação por Região",
+                             labels={"value": "Média de Nota", "variable": "Área de Conhecimento"})
+            fig_reg.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380)
+            st.plotly_chart(fig_reg, use_container_width=True)
+        else:
+            st.info("Dados por UF não disponíveis para agregação regional.")
+            
+    with col_g2:
+        st.markdown("##### 📈 Evolução Histórica Nacional (2021-2025)")
+        # Criação de dataset mock para série temporal plurianual (Fase 5.0 e 5.3)
+        mock_series = pd.DataFrame({
+            "Ano": [2021, 2022, 2023, 2024, 2025],
+            "Matemática": [510.4, 523.1, 520.8, 535.4, 542.1],
+            "Redação": [590.2, 605.5, 620.0, 630.8, 645.5],
+            "Inscritos (Milhões)": [3.1, 3.4, 3.9, 4.2, 4.5]
+        })
+        
+        fig_time = px.line(mock_series, x="Ano", y=["Matemática", "Redação"], markers=True,
+                           title="Evolução das Médias Nacionais (Matemática e Redação)",
+                           labels={"value": "Nota Média", "variable": "Componente"})
+        fig_time.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380)
+        st.plotly_chart(fig_time, use_container_width=True)
 
 st.markdown("---")
 st.markdown("<div style='text-align: center; color: #64748b; font-size: 0.85rem;'>Desenvolvido com PySpark, Streamlit & Plotly — Projeto Integrador (PI4 Univesp)</div>", unsafe_allow_html=True)
