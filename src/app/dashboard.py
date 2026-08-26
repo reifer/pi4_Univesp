@@ -122,16 +122,16 @@ st.markdown("""
 
 try:
     @st.cache_data
-    def load_data():
-        enriched_parquet_path = "data/processed/enem_2025_enriched_parquet"
-        raw_parquet_path = "data/processed/enem_2025_cleaned_parquet"
-        dict_path = "data/dictionary/enem_2025_dict.json"
-        insights_path = "data/processed/enem_2025_ml_insights.json"
-        notas_uf_path = "data/processed/enem_2025_agg_notas_uf_parquet"
-        notas_renda_path = "data/processed/enem_2025_agg_notas_renda_parquet"
-        rede_path = "data/processed/enem_2025_agg_rede_ensino_parquet"
-        socio_avancado_path = "data/processed/enem_2025_agg_socio_avancado_parquet"
-        socio_escola_path = "data/processed/enem_2025_agg_socio_escola_parquet"
+    def load_data(year="2025"):
+        enriched_parquet_path = f"data/processed/enem_{year}_enriched_parquet"
+        raw_parquet_path = f"data/processed/enem_{year}_cleaned_parquet"
+        dict_path = f"data/dictionary/enem_{year}_dict.json"
+        insights_path = f"data/processed/enem_{year}_ml_insights.json"
+        notas_uf_path = f"data/processed/enem_{year}_agg_notas_uf_parquet"
+        notas_renda_path = f"data/processed/enem_{year}_agg_notas_renda_parquet"
+        rede_path = f"data/processed/enem_{year}_agg_rede_ensino_parquet"
+        socio_avancado_path = f"data/processed/enem_{year}_agg_socio_avancado_parquet"
+        socio_escola_path = f"data/processed/enem_{year}_agg_socio_escola_parquet"
         
         enem_dict = {}
         if os.path.exists(dict_path):
@@ -189,29 +189,30 @@ try:
                 
         return df, df_notas_uf, df_notas_renda, df_rede, df_socio_avancado, df_socio_escola, ml_insights, enem_dict
 
-    df_raw, df_notas_uf, df_notas_renda, df_rede, df_socio_avancado, df_socio_escola, ml_insights, enem_dict = load_data()
+    # --- PAINEL LATERAL (SIDEBAR) COM EXPANDERS ---
+    st.sidebar.image("https://img.icons8.com/isometric-line/100/education.png", width=55)
+    st.sidebar.title("🎛️ Filtros de Pesquisa")
+    selected_year = st.sidebar.selectbox("Selecione o Ano do ENEM:", ["2025", "2024"], index=0)
+    st.sidebar.divider()
+
+    df_raw, df_notas_uf, df_notas_renda, df_rede, df_socio_avancado, df_socio_escola, ml_insights, enem_dict = load_data(selected_year)
 
     # Header da Aplicação
-    st.markdown("""
+    st.markdown(f"""
     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; padding: 20px 0; border-bottom: 1px solid #E2E8F0;">
         <div>
             <span class="badge-primary">Projeto Integrador (PI4 Univesp)</span>
-            <h1 style="margin-top: 10px; margin-bottom: 0; font-size: 2.2rem;">🎓 ENEM 2025 — Analytics & AI Dashboard</h1>
+            <h1 style="margin-top: 10px; margin-bottom: 0; font-size: 2.2rem;">🎓 ENEM {selected_year} — Analytics & AI Dashboard</h1>
             <p style="color: #475569; font-size: 1.05rem; margin-top: 5px;">Visão executiva, geográfica, socioeconômica, redes de ensino detalhadas e preditiva</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
 
     if df_raw.empty:
-        st.error("Erro: Dados do ENEM não encontrados.")
+        st.error(f"Erro: Dados do ENEM {selected_year} não encontrados.")
         st.stop()
 
     treineiro_map = {"Não Treineiro": "0", "Treineiro": "1"}
-
-    # --- PAINEL LATERAL (SIDEBAR) COM EXPANDERS ---
-    st.sidebar.image("https://img.icons8.com/isometric-line/100/education.png", width=55)
-    st.sidebar.title("🎛️ Filtros de Pesquisa")
-    st.sidebar.divider()
 
     with st.sidebar.expander("📍 Recorte Geográfico", expanded=True):
         all_ufs = sorted(df_raw["SG_UF_PROVA"].unique())
@@ -347,7 +348,7 @@ try:
             st.info("Execute o transform.py atualizado para gerar a base agregada da Fase 5.2.")
 
     with tab4:
-        st.subheader("📈 Análise de Desempenho e Notas Médias no ENEM 2025")
+        st.subheader(f"📈 Análise de Desempenho e Notas Médias no ENEM {selected_year}")
         if df_notas_uf.empty:
             st.info("Dados agregados de notas não encontrados.")
         else:

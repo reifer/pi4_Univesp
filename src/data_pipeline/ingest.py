@@ -83,5 +83,5 @@ def ingest_enem_data_by_year(year: int):
     spark.stop()
 
 if __name__ == "__main__":
-    for target_year in [2025]:
+    for target_year in [2024, 2025]:
         ingest_enem_data_by_year(target_year)
