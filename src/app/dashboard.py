@@ -140,6 +140,18 @@ def load_data():
         except Exception as ex:
             st.sidebar.warning(f"Erro ao ler dicionário JSON: {ex}")
 
+    def safe_read_parquet(path, columns=None):
+        """Lê arquivos Parquet de forma segura, ignorando diretórios ausentes ou corrompidos."""
+        if os.path.exists(path):
+            try:
+                if columns is not None:
+                    return pd.read_parquet(path, columns=columns)
+                return pd.read_parquet(path)
+            except Exception as e:
+                st.sidebar.warning(f"Aviso: Falha ao carregar {path}: {e}")
+                return pd.DataFrame()
+        return pd.DataFrame()
+
     df = pd.DataFrame()
     if os.path.exists(enriched_parquet_path):
         try:
@@ -159,16 +171,15 @@ def load_data():
             df = pd.read_parquet(enriched_parquet_path, columns=cols_to_load)
         except Exception as ex:
             st.sidebar.warning(f"Recorrendo ao dataset padrão devido a: {ex}")
-            if os.path.exists(raw_parquet_path):
-                df = pd.read_parquet(raw_parquet_path, columns=['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006'])
-    elif os.path.exists(raw_parquet_path):
-        df = pd.read_parquet(raw_parquet_path, columns=['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006'])
+            df = safe_read_parquet(raw_parquet_path, columns=['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006'])
+    else:
+        df = safe_read_parquet(raw_parquet_path, columns=['SG_UF_PROVA', 'IN_TREINEIRO', 'TP_SEXO', 'Q006'])
 
-    df_notas_uf = pd.read_parquet(notas_uf_path) if os.path.exists(notas_uf_path) else pd.DataFrame()
-    df_notas_renda = pd.read_parquet(notas_renda_path) if os.path.exists(notas_renda_path) else pd.DataFrame()
-    df_rede = pd.read_parquet(rede_path) if os.path.exists(rede_path) else pd.DataFrame()
-    df_socio_avancado = pd.read_parquet(socio_avancado_path) if os.path.exists(socio_avancado_path) else pd.DataFrame()
-    df_socio_escola = pd.read_parquet(socio_escola_path) if os.path.exists(socio_escola_path) else pd.DataFrame()
+    df_notas_uf = safe_read_parquet(notas_uf_path)
+    df_notas_renda = safe_read_parquet(notas_renda_path)
+    df_rede = safe_read_parquet(rede_path)
+    df_socio_avancado = safe_read_parquet(socio_avancado_path)
+    df_socio_escola = safe_read_parquet(socio_escola_path)
         
     ml_insights = {}
     if os.path.exists(insights_path):
