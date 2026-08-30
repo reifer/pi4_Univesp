@@ -1,7 +1,4 @@
-data/raw/
-data/processed/*
-!data/processed/**/*.parquet
-!data/processed/**/*.json
+data/
 data/tmp_spill/
 .venv/
 __pycache__/
