@@ -43,9 +43,9 @@
 - [x] **Leitura Integrada de Colunas Descritivas:** Atualizar os seletores e gráficos do Streamlit para consumir diretamente as colunas enriquecidas (`_DESC`), garantindo amigabilidade visual sem comprometer as agregações.
 
 ### Fase 5 — Expansão Plurianual, Redes Detalhadas, Séries Históricas & Governança (Metodologia COFRE)
-- [x **Fase 5.0 - Arquitetura Plurianual (5 Anos):** Expandir o pipeline de dados para suportar a ingestão e unificação de uma janela de 5 anos, gerando arquivos Parquet otimizados por ano.
-- [] **Fase 5.1 - Granularidade de Redes de Ensino (`TP_DEPENDENCIA_ADM_ESC`):** Desmembrar a categoria pública em **Federal, Estadual e Municipal**, contrapondo-a com a rede **Privada** para análises comparativas aprofundadas de gestão e desempenho.
-- [ ] **Fase 5.2 - Raio-X Socioeconômico Avançado (`Q006` x `Q007` x Escola):** Implementar cruzamentos de impacto acadêmico avaliando o retorno educacional pela renda familiar, o peso da autonomia financeira (estudantes que trabalham) cruzado com o tipo de dependência administrativa da escola.
-- [ ] **Fase 5.3 - Geopolítica, Regiões e Séries Temporais (Dashboard):** Desenvolver visualizações geográficas por Estado/Região e gráficos de linhas temporais para demonstrar a evolução plurianual do desempenho educacional brasileiro.
-- [ ] **Fase 5.4 - Governança de Prompts e Tarefas (Metodologia COFRE):** Padronizar a execução de todas as tarefas de código, prompts e documentação sob a metodologia **COFRE** (Contexto, Objetivo, Formato, Regras e Execução).
-- [ ] **Fase 5.5 - Conteinerização & Deploy Contínuo (CI/CD):** Atualizar configurações para garantir o fluxo de deploy obrigatório e automatizado (`dev` ➔ `hom` ➔ `prd`), validando cada entrega na nuvem.
+
+- [x] **Fase 5.1 — Granularidade e Desempenho Plurianual por Rede de Ensino (`TP_DEPENDENCIA_ADM_ESC`)**: Mapear e contabilizar o total absoluto e percentual de participantes inscritos em escolas públicas (segmentadas em Federal, Estadual e Municipal) versus a rede Privada. Cruzar as dependências administrativas com as notas médias das quatro áreas e redação (`NU_NOTA_CN`, `NU_NOTA_CH`, `NU_NOTA_LC`, `NU_NOTA_MT`, `NU_NOTA_REDACAO`), processando a janela temporal plurianual (5 anos) via `NU_ANO` para avaliar a evolução e melhoria de desempenho ao longo do tempo.
+- [ ] **Fase 5.2 — Raio-X Socioeconômico Avançado (`Q006` x `Q007` x Escola)**: Implementar cruzamentos de impacto acadêmico avaliando o retorno educacional pela renda familiar e o peso da autonomia financeira (estudantes que trabalham) cruzado com o tipo de dependência administrativa da escola (`TP_DEPENDENCIA_ADM_ESC`).
+- [ ] **Fase 5.3 — Geopolitica, Regiões e Séries Temporais (Dashboard)**: Estruturar a leitura geográfica utilizando as UFs de prova/escola (`SG_UF_PROVA` / `SG_UF_ESC`) agrupadas nas 5 Regiões do Brasil, desenvolvendo visualizações geográficas e gráficos de linhas temporais plurianuais integrados com filtros interativos na barra lateral (`st.sidebar`).
+
+```

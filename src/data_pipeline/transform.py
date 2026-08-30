@@ -2,57 +2,43 @@ import os
 import argparse
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
-from pyspark.sql.types import DoubleType
+from pyspark.sql.types import DoubleType, IntegerType
+from pyspark.sql.window import Window
 
-def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str = None):
-    print(f"Iniciando pipeline de transformação e enriquecimento de dados para {year}...")
+def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | None = None):
+    print(f"\n=======================================================")
+    print(f" Iniciando pipeline de transformação ENEM {year} (Fase 5.1)")
+    print(f"=======================================================")
 
-    part_input_path = f"data/processed/enem_{year}_cleaned_parquet"
-    res_input_path = f"data/processed/enem_{year}_resultados_parquet"
-    
     enriched_output_path = f"data/processed/enem_{year}_enriched_parquet"
     output_rede_path = f"data/processed/enem_{year}_agg_rede_ensino_parquet"
+    output_socio_escola_path = f"data/processed/enem_{year}_agg_socio_escola_parquet"
+    output_notas_uf_path = f"data/processed/enem_{year}_agg_notas_uf_parquet"
+    output_notas_renda_path = f"data/processed/enem_{year}_agg_notas_renda_parquet"
 
-    if not os.path.exists(part_input_path):
-        raise FileNotFoundError(f"Dataset de participantes não encontrado em: {part_input_path}. Execute o ingest.py primeiro.")
-
-    print(f"Lendo dataset de participantes: {part_input_path}...")
-    df_part = spark.read.parquet(part_input_path)
-
-    df_res = None
-    if os.path.exists(res_input_path):
-        print(f"Lendo dataset de resultados (notas): {res_input_path}...")
-        df_res = spark.read.parquet(res_input_path)
-    else:
-        raise FileNotFoundError(f"Dataset de resultados não encontrado em {res_input_path}. As notas são obrigatórias para este gráfico.")
-
-    # Converte notas para Double
-    nota_cols = ['NU_NOTA_MT', 'NU_NOTA_REDACAO', 'NU_NOTA_CN', 'NU_NOTA_CH', 'NU_NOTA_LC']
-    for c in nota_cols:
-        if c in df_res.columns:
-            df_res = df_res.withColumn(c, F.col(c).cast(DoubleType()))
-
-    # MAPEAMENTO DINÂMICO DE CHAVES
-    left_key = "NU_INSCRICAO" if "NU_INSCRICAO" in df_part.columns else "NU_SEQUENCIAL"
-    right_key = "NU_SEQUENCIAL" if "NU_SEQUENCIAL" in df_res.columns else "NU_INSCRICAO"
-
-    if left_key not in df_part.columns or right_key not in df_res.columns:
-        raise ValueError(f"Erro crítico: Não foi possível identificar as chaves de cruzamento compatíveis entre os datasets.")
-
-    print(f"Realizando join utilizando chaves compatíveis -> Participantes ({left_key}) <-> Resultados ({right_key})")
+    # Leitura unificada padrão para toda a série histórica (2021-2025)
+    input_path = f"data/processed/enem_{year}_cleaned_parquet"
+    if not os.path.exists(input_path):
+        raise FileNotFoundError(f"Dataset limpo não encontrado em: {input_path}. Execute o ingest.py / ingest_21_23.py primeiro.")
     
-    if left_key != right_key:
-        df_res = df_res.withColumnRenamed(right_key, left_key)
-        join_key = left_key
-    else:
-        join_key = left_key
+    print(f"Lendo dataset unificado de {year}: {input_path}...")
+    df_joined = spark.read.parquet(input_path)
 
-    res_cols = [join_key] + [c for c in nota_cols if c in df_res.columns]
-    
-    df_joined = df_part.join(df_res.select(*res_cols), on=join_key, how="left")
+    # Reparticionamento para otimizar o processamento no Spark
     df_joined = df_joined.repartition(32)
 
-    # Descrições textuais padrão para variáveis categóricas
+    # Blindagem Dinâmica: Assegura que todas as colunas de notas existam no DataFrame (se faltarem, cria como nulas)
+    nota_cols = ['NU_NOTA_MT', 'NU_NOTA_REDACAO', 'NU_NOTA_CN', 'NU_NOTA_CH', 'NU_NOTA_LC']
+    for c in nota_cols:
+        if c in df_joined.columns:
+            df_joined = df_joined.withColumn(c, F.col(c).cast(DoubleType()))
+        else:
+            df_joined = df_joined.withColumn(c, F.lit(None).cast(DoubleType()))
+
+    # Assegura coluna de Ano (NU_ANO)
+    df_joined = df_joined.withColumn("NU_ANO", F.lit(year))
+
+    # Mapeamento Categórico Descritivo das Variáveis Sociodemográficas
     if "TP_SEXO" in df_joined.columns:
         df_joined = df_joined.withColumn(
             "TP_SEXO_DESC",
@@ -64,47 +50,63 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str = N
     if "IN_TREINEIRO" in df_joined.columns:
         df_joined = df_joined.withColumn(
             "IN_TREINEIRO_DESC",
-            F.when(F.col("IN_TREINEIRO") == 1, "Treineiro")
+            F.when(F.col("IN_TREINEIRO").isin(1, "1", 1.0), "Treineiro")
              .otherwise("Não Treineiro")
         )
 
-    # Identificação dinâmica e segura da coluna de dependência administrativa / tipo de escola
-    colunas_upper = [c.upper().strip() for c in df_joined.columns]
-    dep_col = None
-    tipo_mapeamento = None
-    
-    potential_cols = ["TP_ESCOLA", "TP_DEPENDENCIA_ADM_ESC", "TP_DEPENDENCIA_ADM"]
-    for p in potential_cols:
-        if p in colunas_upper:
-            dep_col = df_joined.columns[colunas_upper.index(p)]
-            tipo_mapeamento = "tp_escola" if p == "TP_ESCOLA" else "tp_dependencia"
-            break
+    if "TP_COR_RACA" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "TP_COR_RACA_DESC",
+            F.when(F.col("TP_COR_RACA").isin(0, "0"), "Não declarado")
+             .when(F.col("TP_COR_RACA").isin(1, "1"), "Branca")
+             .when(F.col("TP_COR_RACA").isin(2, "2"), "Preta")
+             .when(F.col("TP_COR_RACA").isin(3, "3"), "Parda")
+             .when(F.col("TP_COR_RACA").isin(4, "4"), "Amarela")
+             .when(F.col("TP_COR_RACA").isin(5, "5"), "Indígena")
+             .otherwise("Não Informado")
+        )
 
-    if dep_col:
-        print(f"\n[SUCESSO] Coluna de rede/escola identificada: '{dep_col}' (Tipo: {tipo_mapeamento})")
-        if tipo_mapeamento == "tp_escola":
-            df_joined = df_joined.withColumn(
-                "TP_DEPENDENCIA_ADM_ESC_DESC",
-                F.when(F.col(dep_col).isin(2, "2", 2.0), "Pública")
-                 .when(F.col(dep_col).isin(3, "3", 3.0), "Privada")
-                 .otherwise("Não Informado")
-            )
-        else:
-            df_joined = df_joined.withColumn(
-                "TP_DEPENDENCIA_ADM_ESC_DESC",
-                F.when(F.col(dep_col).isin(1, "1", 1.0), "Federal")
-                 .when(F.col(dep_col).isin(2, "2", 2.0), "Estadual")
-                 .when(F.col(dep_col).isin(3, "3", 3.0), "Municipal")
-                 .when(F.col(dep_col).isin(4, "4", 4.0), "Privada")
-                 .otherwise("Não Informado")
-            )
+    if "TP_ST_CONCLUSAO" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "TP_ST_CONCLUSAO_DESC",
+            F.when(F.col("TP_ST_CONCLUSAO").isin(1, "1"), "Já concluí o Ensino Médio")
+             .when(F.col("TP_ST_CONCLUSAO").isin(2, "2"), "Estou cursando e concluirei no ano")
+             .when(F.col("TP_ST_CONCLUSAO").isin(3, "3"), "Estou cursando e concluirei após o ano")
+             .when(F.col("TP_ST_CONCLUSAO").isin(4, "4"), "Não concluí e não estou cursando")
+             .otherwise("Não Informado")
+        )
+
+    # Mapeamento Rigoroso da Fase 5.1: Granularidade por TP_DEPENDENCIA_ADM_ESC
+    print("Mapeando TP_DEPENDENCIA_ADM_ESC conforme o Dicionário Oficial do ENEM...")
+    if "TP_DEPENDENCIA_ADM_ESC" in df_joined.columns:
+        df_joined = df_joined.withColumn(
+            "TP_DEPENDENCIA_ADM_ESC_DESC",
+            F.when(F.col("TP_DEPENDENCIA_ADM_ESC").isin(1, "1", 1.0), "Federal")
+             .when(F.col("TP_DEPENDENCIA_ADM_ESC").isin(2, "2", 2.0), "Estadual")
+             .when(F.col("TP_DEPENDENCIA_ADM_ESC").isin(3, "3", 3.0), "Municipal")
+             .when(F.col("TP_DEPENDENCIA_ADM_ESC").isin(4, "4", 4.0), "Privada")
+             .otherwise("Não Informado")
+        )
+    elif "TP_ESCOLA" in df_joined.columns:
+        print("[Aviso] Fallback para TP_ESCOLA (Pública vs Privada)...")
+        df_joined = df_joined.withColumn(
+            "TP_DEPENDENCIA_ADM_ESC_DESC",
+            F.when(F.col("TP_ESCOLA").isin(2, "2", 2.0), "Pública")
+             .when(F.col("TP_ESCOLA").isin(3, "3", 3.0), "Privada")
+             .otherwise("Não Informado")
+        )
     else:
-        print(f"\n[ALERTA CRÍTICO] Nenhuma coluna de escola encontrada nas colunas: {df_joined.columns}")
         df_joined = df_joined.withColumn("TP_DEPENDENCIA_ADM_ESC_DESC", F.lit("Não Informado"))
 
-    # === FASE 5.2: ENRIQUECIMENTO SOCIOECONÔMICO AVANÇADO (Q006 x Q007 x Escola) ===
-    print("Aplicando mapeamento avançado para Renda (Q006) e Trabalho/Autonomia (Q007)...")
-    
+    # Adiciona classificação macro de Rede (Pública vs Privada)
+    df_joined = df_joined.withColumn(
+        "TP_REDE_MACRO_DESC",
+        F.when(F.col("TP_DEPENDENCIA_ADM_ESC_DESC").isin("Federal", "Estadual", "Municipal"), "Pública")
+         .when(F.col("TP_DEPENDENCIA_ADM_ESC_DESC") == "Privada", "Privada")
+         .otherwise("Não Informado")
+    )
+
+    # Mapeamento Socioeconômico Avançado (Q006 e Q007)
     if "Q006" in df_joined.columns:
         df_joined = df_joined.withColumn(
             "Q006_DESC",
@@ -134,54 +136,110 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str = N
         df_joined = df_joined.withColumn(
             "Q007_DESC",
             F.when(F.col("Q007") == "A", "Não")
-             .when(F.col("Q007") == "B", "Sim, um ou dois dias por semana")
-             .when(F.col("Q007") == "C", "Sim, três ou quatro dias por semana")
-             .when(F.col("Q007") == "D", "Sim, pelo menos cinco dias por semana")
+             .when(F.col("Q007") == "B", "Sim, 1 ou 2 dias/semana")
+             .when(F.col("Q007") == "C", "Sim, 3 ou 4 dias/semana")
+             .when(F.col("Q007") == "D", "Sim, 5+ dias/semana")
              .otherwise("Não Informado")
         )
     else:
         df_joined = df_joined.withColumn("Q007_DESC", F.lit("Não Informado"))
 
+    # Gravação do Dataset Enriquecido
     print(f"Salvando dataset enriquecido em: {enriched_output_path}...")
     df_joined.write.mode("overwrite").parquet(enriched_output_path)
 
-    # Agregação por Rede de Ensino
-    print("Gerando tabelas agregadas por rede de ensino...")
-    agg_rede = df_joined.groupBy("TP_DEPENDENCIA_ADM_ESC_DESC").agg(
-        F.count("*").alias("total_candidatos"),
-        F.avg("NU_NOTA_MT").alias("media_matematica"),
-        F.avg("NU_NOTA_REDACAO").alias("media_redacao")
-    )
-    agg_rede.write.mode("overwrite").parquet(output_rede_path)
-    print(f"Salvando agregação por Rede de Ensino em: {output_rede_path}...")
+    # Agregação Estatística da Fase 5.1: Volumetria e Desempenho por Ano, UF e Rede de Ensino
+    print(f"Gerando agregação da Fase 5.1 (NU_ANO x SG_UF_PROVA x TP_DEPENDENCIA_ADM_ESC_DESC)...")
+    uf_col = "SG_UF_PROVA" if "SG_UF_PROVA" in df_joined.columns else "CO_UF_PROVA"
 
-    # Agregação Avançada da Fase 5.2
-    output_socio_escola_path = f"data/processed/enem_{year}_agg_socio_escola_parquet"
-    print("Gerando agregação avançada (Fase 5.2): Renda (Q006_DESC) x Autonomia (Q007_DESC) x Escola...")
+    agg_rede = df_joined.groupBy(
+        "NU_ANO",
+        uf_col,
+        "TP_DEPENDENCIA_ADM_ESC_DESC"
+    ).agg(
+        F.count("*").alias("total_candidatos"),
+        F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
+        F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
+        F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
+        F.round(F.avg("NU_NOTA_MT"), 2).alias("media_mt"),
+        F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
+    )
+
+    # Cálculo da Média Geral das 5 áreas
+    agg_rede = agg_rede.withColumn(
+        "media_geral",
+        F.round(
+            (F.coalesce(F.col("media_cn"), F.lit(0.0)) +
+             F.coalesce(F.col("media_ch"), F.lit(0.0)) +
+             F.coalesce(F.col("media_lc"), F.lit(0.0)) +
+             F.coalesce(F.col("media_mt"), F.lit(0.0)) +
+             F.coalesce(F.col("media_redacao"), F.lit(0.0))) / 5.0, 2
+        )
+    )
+
+    # Cálculo do percentual de alunos na UF/Ano
+    w_uf_ano = Window.partitionBy("NU_ANO", uf_col)
+    agg_rede = agg_rede.withColumn(
+        "total_uf_ano", F.sum("total_candidatos").over(w_uf_ano)
+    ).withColumn(
+        "percentual_alunos",
+        F.round((F.col("total_candidatos") / F.col("total_uf_ano")) * 100.0, 2)
+    ).drop("total_uf_ano")
+
+    print(f"Salvando agregação de Redes de Ensino em: {output_rede_path}...")
+    agg_rede.write.mode("overwrite").parquet(output_rede_path)
+
+    # Agregação Avançada da Fase 5.2 (Socioeconômico x Escola)
+    print("Gerando agregação avançada (Fase 5.2): Renda (Q006_DESC) x Trabalho (Q007_DESC) x Rede...")
     agg_socio_escola = df_joined.groupBy(
+        "NU_ANO",
         "TP_DEPENDENCIA_ADM_ESC_DESC", 
         "Q006_DESC", 
         "Q007_DESC"
     ).agg(
         F.count("*").alias("total_candidatos"),
-        F.avg("NU_NOTA_MT").alias("media_matematica"),
-        F.avg("NU_NOTA_REDACAO").alias("media_redacao"),
-        F.avg("NU_NOTA_CN").alias("media_cn"),
-        F.avg("NU_NOTA_CH").alias("media_ch"),
-        F.avg("NU_NOTA_LC").alias("media_lc")
+        F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
+        F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
+        F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
+        F.round(F.avg("NU_NOTA_MT"), 2).alias("media_matematica"),
+        F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
     )
     agg_socio_escola.write.mode("overwrite").parquet(output_socio_escola_path)
-    print(f"Salvando agregação avançada socioeconômica em: {output_socio_escola_path}...")
 
-    print("Pipeline de transformação executado com sucesso!")
+    # Agregações para Painéis Gerais (Notas por UF e Notas por Renda)
+    print("Atualizando agregações de apoio (Notas por UF e Notas por Renda)...")
+    if uf_col in df_joined.columns and "IN_TREINEIRO" in df_joined.columns:
+        agg_notas_uf = df_joined.groupBy("NU_ANO", uf_col, "IN_TREINEIRO").agg(
+            F.count("*").alias("total_candidatos"),
+            F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
+            F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
+            F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
+            F.round(F.avg("NU_NOTA_MT"), 2).alias("media_mt"),
+            F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
+        )
+        agg_notas_uf.write.mode("overwrite").parquet(output_notas_uf_path)
+
+    if "Q006" in df_joined.columns and "IN_TREINEIRO" in df_joined.columns:
+        agg_notas_renda = df_joined.groupBy("NU_ANO", "Q006", "IN_TREINEIRO").agg(
+            F.count("*").alias("total_candidatos"),
+            F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
+            F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
+            F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
+            F.round(F.avg("NU_NOTA_MT"), 2).alias("media_mt"),
+            F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
+        )
+        agg_notas_renda.write.mode("overwrite").parquet(output_notas_renda_path)
+
+    print(f"Pipeline de transformação para ENEM {year} concluído com sucesso!\n")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Transform script for ENEM 2025 pipeline")
-    parser.add_argument("--dict_path", type=str, default="enem_2025_dict.json", help="Path to dictionary JSON")
+    parser = argparse.ArgumentParser(description="Pipeline de Transformação ENEM Plurianual")
+    parser.add_argument("--year", type=int, default=None, help="Ano específico para processar (ex: 2025)")
+    parser.add_argument("--dict_path", type=str, default="data/dictionary/enem_2025_dict.json", help="Caminho do Dicionário JSON")
     args = parser.parse_args()
 
     spark = SparkSession.builder \
-        .appName("ENEM_2025_Transform") \
+        .appName("ENEM_Plurianual_Transform") \
         .config("spark.driver.memory", "4g") \
         .config("spark.executor.memory", "4g") \
         .config("spark.driver.maxResultSize", "2g") \
@@ -192,8 +250,10 @@ if __name__ == "__main__":
         .config("spark.local.dir", "data/tmp_spill") \
         .getOrCreate()
 
+    target_years = [args.year] if args.year else [2021, 2022, 2023, 2024, 2025]
+
     try:
-        for target_year in [2024, 2025]:
-            run_transformation(spark, year=target_year, dict_path=args.dict_path)
+        for y in target_years:
+            run_transformation(spark, year=y, dict_path=args.dict_path)
     finally:
         spark.stop()
