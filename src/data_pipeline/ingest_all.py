@@ -41,6 +41,34 @@ def ingest_legacy_years(year: int, spark: SparkSession):
     df_microdados.write.mode("overwrite").parquet(output_parquet)
     print(f"✅ ENEM {year} processado com sucesso!")
 
+from pyspark.sql.window import Window
+
+def add_consecutive_index(df, index_col="row_id"):
+    """
+    Atribui um índice sequencial consecutivo e contíguo (0 a N-1) a cada linha do DataFrame,
+    independente da quantidade ou tamanho das partições geradas pelo Spark, sem causar shuffle global.
+    """
+    df_with_parts = df.withColumn("_part_id", F.spark_partition_id()) \
+                      .withColumn("_mono_id", F.monotonically_increasing_id())
+    
+    # Índice relativo intra-partição (processado em paralelo sem shuffle)
+    w = Window.partitionBy("_part_id").orderBy("_mono_id")
+    df_indexed = df_with_parts.withColumn("_row_in_part", F.row_number().over(w) - 1)
+    
+    # Contagem de registros por partição para cálculo de offsets
+    part_counts = df_with_parts.groupBy("_part_id").count().collect()
+    cum_offset = {}
+    curr = 0
+    for r in sorted(part_counts, key=lambda x: x["_part_id"]):
+        cum_offset[r["_part_id"]] = curr
+        curr += r["count"]
+    
+    # Mapeamento do deslocamento por partição
+    mapping_expr = F.create_map([F.lit(x) for kv in cum_offset.items() for x in kv])
+    
+    return df_indexed.withColumn(index_col, F.col("_row_in_part") + mapping_expr[F.col("_part_id")]) \
+                     .drop("_part_id", "_mono_id", "_row_in_part")
+
 def unify_recent_years(year: int, spark: SparkSession):
     print(f"\n🚀 [Recente] Unificando dados fragmentados do ENEM {year}...")
     
@@ -51,15 +79,23 @@ def unify_recent_years(year: int, spark: SparkSession):
         print(f"⚠️ Aviso: Arquivos brutos de Participantes ou Resultados de {year} não encontrados em data/raw/.")
         return
 
-    print(f"📂 Lendo particionados de {year}...")
-    df_part = spark.read.option("header", "true").option("delimiter", ";").option("inferSchema", "true").csv(participantes_path)
-    df_res = spark.read.option("header", "true").option("delimiter", ";").option("inferSchema", "true").csv(resultados_path)
+    print(f"📂 Lendo particionados de {year} com encoding ISO-8859-1...")
+    df_part = spark.read.option("header", "true") \
+                        .option("delimiter", ";") \
+                        .option("encoding", "ISO-8859-1") \
+                        .option("inferSchema", "true") \
+                        .csv(participantes_path)
+    df_res = spark.read.option("header", "true") \
+                       .option("delimiter", ";") \
+                       .option("encoding", "ISO-8859-1") \
+                       .option("inferSchema", "true") \
+                       .csv(resultados_path)
     
-    print("🔄 Alinhando bases de Participantes e Resultados via índice sequencial...")
-    df_part_indexed = df_part.withColumn("row_id", monotonically_increasing_id())
-    df_res_indexed = df_res.withColumn("row_id", monotonically_increasing_id())
+    print("🔄 Alinhando bases de Participantes e Resultados via índice sequencial contíguo...")
+    df_part_indexed = add_consecutive_index(df_part, "row_id")
+    df_res_indexed = add_consecutive_index(df_res, "row_id")
     
-    df_unified = df_part_indexed.join(df_res_indexed, on="row_id", how="inner")
+    df_unified = df_part_indexed.join(df_res_indexed, on="row_id", how="left")
     
     # Seleção estrita restaurando todas as colunas demográficas, socioeconômicas, de prova e notas
     df_standardized = df_unified.select(
@@ -129,9 +165,16 @@ def run_full_ingestion():
     print(" INICIANDO PIPELINE DE INGESTÃO GERAL (2021-2025) ")
     print("==================================================")
     
+    spark_tmp_dir = os.path.abspath("data/.spark_tmp")
+    os.makedirs(spark_tmp_dir, exist_ok=True)
+    
     spark = SparkSession.builder \
         .appName("EnemIngestionMasterPipeline") \
         .config("spark.driver.memory", "4g") \
+        .config("spark.executor.memory", "4g") \
+        .config("spark.local.dir", spark_tmp_dir) \
+        .config("spark.sql.shuffle.partitions", "32") \
+        .config("spark.sql.adaptive.enabled", "true") \
         .getOrCreate()
     
     os.makedirs("data/processed", exist_ok=True)
