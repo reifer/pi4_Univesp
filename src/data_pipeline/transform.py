@@ -1,4 +1,5 @@
 import os
+import json
 import argparse
 from pyspark.sql import SparkSession
 import pyspark.sql.functions as F
@@ -106,43 +107,60 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | N
          .otherwise("Não Informado")
     )
 
-    # Mapeamento Socioeconômico Avançado (Q006 e Q007)
-    if "Q006" in df_joined.columns:
-        df_joined = df_joined.withColumn(
-            "Q006_DESC",
-            F.when(F.col("Q006") == "A", "Nenhuma renda")
-             .when(F.col("Q006") == "B", "Até R$ 1.518,00")
-             .when(F.col("Q006") == "C", "De R$ 1.518,01 até R$ 2.277,00")
-             .when(F.col("Q006") == "D", "De R$ 2.277,01 até R$ 3.036,00")
-             .when(F.col("Q006") == "E", "De R$ 3.036,01 até R$ 3.795,00")
-             .when(F.col("Q006") == "F", "De R$ 3.795,01 até R$ 4.554,00")
-             .when(F.col("Q006") == "G", "De R$ 4.554,01 até R$ 6.072,00")
-             .when(F.col("Q006") == "H", "De R$ 6.072,01 até R$ 7.590,00")
-             .when(F.col("Q006") == "I", "De R$ 7.590,01 até R$ 9.108,00")
-             .when(F.col("Q006") == "J", "De R$ 9.108,01 até R$ 10.626,00")
-             .when(F.col("Q006") == "K", "De R$ 10.626,01 até R$ 12.144,00")
-             .when(F.col("Q006") == "L", "De R$ 12.144,01 até R$ 13.662,00")
-             .when(F.col("Q006") == "M", "De R$ 13.662,01 até R$ 15.180,00")
-             .when(F.col("Q006") == "N", "De R$ 15.180,01 até R$ 18.216,00")
-             .when(F.col("Q006") == "O", "De R$ 18.216,01 até R$ 22.770,00")
-             .when(F.col("Q006") == "P", "De R$ 22.770,01 até R$ 30.360,00")
-             .when(F.col("Q006") == "Q", "Acima de R$ 30.360,00")
-             .otherwise("Não Informado")
-        )
-    else:
-        df_joined = df_joined.withColumn("Q006_DESC", F.lit("Não Informado"))
+    # Carregamento Dinâmico do Dicionário JSON Oficial do Ano
+    dict_file = dict_path if (dict_path and os.path.exists(dict_path) and str(year) in dict_path) else f"data/dictionary/enem_{year}_dict.json"
+    if not os.path.exists(dict_file):
+        dict_file = "data/dictionary/enem_2025_dict.json"
+    
+    enem_dict = {}
+    if os.path.exists(dict_file):
+        try:
+            with open(dict_file, "r", encoding="utf-8") as f:
+                enem_dict = json.load(f)
+            print(f"📖 Dicionário carregado com sucesso: {dict_file}")
+        except Exception as ex:
+            print(f"⚠️ Aviso ao ler dicionário {dict_file}: {ex}")
 
-    if "Q007" in df_joined.columns:
-        df_joined = df_joined.withColumn(
-            "Q007_DESC",
-            F.when(F.col("Q007") == "A", "Não")
-             .when(F.col("Q007") == "B", "Sim, 1 ou 2 dias/semana")
-             .when(F.col("Q007") == "C", "Sim, 3 ou 4 dias/semana")
-             .when(F.col("Q007") == "D", "Sim, 5+ dias/semana")
-             .otherwise("Não Informado")
-        )
+    # Identificação da Inversão do Questionário Socioeconômico do INEP:
+    # 2021-2023: Q006 = Renda Familiar, Q007 = Situação de Trabalho
+    # 2024-2025: Q006 = Situação de Trabalho, Q007 = Renda Familiar
+    if year in [2024, 2025]:
+        col_renda_raw = "Q007"
+        col_trabalho_raw = "Q006"
+        dict_renda = enem_dict.get("Q007", {})
+        dict_trabalho = enem_dict.get("Q006", {})
     else:
-        df_joined = df_joined.withColumn("Q007_DESC", F.lit("Não Informado"))
+        col_renda_raw = "Q006"
+        col_trabalho_raw = "Q007"
+        dict_renda = enem_dict.get("Q006", {})
+        dict_trabalho = enem_dict.get("Q007", {})
+
+    # Helper para criar Expressões when() no PySpark a partir de dicionário
+    def build_when_map(column_name: str, mapping: dict, default_val: str = "Não Informado"):
+        if column_name not in df_joined.columns or not mapping:
+            return F.lit(default_val)
+        expr = F.col(column_name)
+        when_chain = None
+        for k, v in mapping.items():
+            if when_chain is None:
+                when_chain = F.when(expr == k, F.lit(v))
+            else:
+                when_chain = when_chain.when(expr == k, F.lit(v))
+        return when_chain.otherwise(F.lit(default_val)) if when_chain is not None else F.lit(default_val)
+
+    # 1. Colunas Canônicas Padronizadas (Imunes a inversões entre edições do ENEM)
+    print("Mapeando colunas canônicas de Renda e Trabalho com base no Dicionário Oficial...")
+    if col_renda_raw in df_joined.columns:
+        df_joined = df_joined.withColumn("RENDA_FAMILIAR_COD", F.col(col_renda_raw))
+    else:
+        df_joined = df_joined.withColumn("RENDA_FAMILIAR_COD", F.lit("Não Informado"))
+
+    df_joined = df_joined.withColumn("RENDA_FAMILIAR_DESC", build_when_map(col_renda_raw, dict_renda))
+    df_joined = df_joined.withColumn("TRABALHO_COND_DESC", build_when_map(col_trabalho_raw, dict_trabalho))
+
+    # 2. Mapeamento Retrocompatível de Q006_DESC e Q007_DESC
+    df_joined = df_joined.withColumn("Q006_DESC", build_when_map("Q006", enem_dict.get("Q006", {})))
+    df_joined = df_joined.withColumn("Q007_DESC", build_when_map("Q007", enem_dict.get("Q007", {})))
 
     # Gravação do Dataset Enriquecido
     print(f"Salvando dataset enriquecido em: {enriched_output_path}...")
@@ -189,13 +207,13 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | N
     print(f"Salvando agregação de Redes de Ensino em: {output_rede_path}...")
     agg_rede.write.mode("overwrite").parquet(output_rede_path)
 
-    # Agregação Avançada da Fase 5.2 (Socioeconômico x Escola)
-    print("Gerando agregação avançada (Fase 5.2): Renda (Q006_DESC) x Trabalho (Q007_DESC) x Rede...")
+    # Agregação Avançada da Fase 5.2 (Socioeconômico x Escola com Colunas Canônicas)
+    print("Gerando agregação avançada (Fase 5.2): Renda (RENDA_FAMILIAR_DESC) x Trabalho x Rede...")
     agg_socio_escola = df_joined.groupBy(
         "NU_ANO",
         "TP_DEPENDENCIA_ADM_ESC_DESC", 
-        "Q006_DESC", 
-        "Q007_DESC"
+        "RENDA_FAMILIAR_DESC", 
+        "TRABALHO_COND_DESC"
     ).agg(
         F.count("*").alias("total_candidatos"),
         F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
@@ -203,13 +221,14 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | N
         F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
         F.round(F.avg("NU_NOTA_MT"), 2).alias("media_matematica"),
         F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
-    )
+    ).withColumn("Q006_DESC", F.col("RENDA_FAMILIAR_DESC")) \
+     .withColumn("Q007_DESC", F.col("TRABALHO_COND_DESC"))
     agg_socio_escola.write.mode("overwrite").parquet(output_socio_escola_path)
 
-    # Agregações para Painéis Gerais (Notas por UF e Notas por Renda)
-    print("Atualizando agregações de apoio (Notas por UF e Notas por Renda)...")
+    # Agregações para Painéis Gerais (Notas por UF e Notas por Renda Canônica)
+    print("Atualizando agregações de apoio (Notas por UF e Notas por Renda Canônica)...")
     if uf_col in df_joined.columns and "IN_TREINEIRO" in df_joined.columns:
-        agg_notas_uf = df_joined.groupBy("NU_ANO", uf_col, "IN_TREINEIRO").agg(
+        agg_notas_uf = df_joined.groupBy("NU_ANO", uf_col, "IN_TREINEIRO", "IN_TREINEIRO_DESC").agg(
             F.count("*").alias("total_candidatos"),
             F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
             F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
@@ -219,18 +238,34 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | N
         )
         agg_notas_uf.write.mode("overwrite").parquet(output_notas_uf_path)
 
-    if "Q006" in df_joined.columns and "IN_TREINEIRO" in df_joined.columns:
-        agg_notas_renda = df_joined.groupBy("NU_ANO", "Q006", "IN_TREINEIRO").agg(
+    if "RENDA_FAMILIAR_COD" in df_joined.columns and "IN_TREINEIRO" in df_joined.columns:
+        agg_notas_renda = df_joined.groupBy(
+            "NU_ANO", "RENDA_FAMILIAR_COD", "RENDA_FAMILIAR_DESC", "IN_TREINEIRO", "IN_TREINEIRO_DESC"
+        ).agg(
             F.count("*").alias("total_candidatos"),
             F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
             F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
             F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
             F.round(F.avg("NU_NOTA_MT"), 2).alias("media_mt"),
             F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
-        )
+        ).withColumn("Q006", F.col("RENDA_FAMILIAR_COD")) \
+         .withColumn("Q006_DESC", F.col("RENDA_FAMILIAR_DESC"))
         agg_notas_renda.write.mode("overwrite").parquet(output_notas_renda_path)
 
-    print(f"Pipeline de transformação para ENEM {year} concluído com sucesso!\n")
+    # Agregação Demográfica Completa (População 100% real para Sexo x UF x Treineiro)
+    output_demografia_path = f"data/processed/enem_{year}_agg_demografia_parquet"
+    if uf_col in df_joined.columns and "TP_SEXO_DESC" in df_joined.columns and "IN_TREINEIRO" in df_joined.columns:
+        agg_demografia = df_joined.groupBy(
+            "NU_ANO", uf_col, "TP_SEXO_DESC", "IN_TREINEIRO", "IN_TREINEIRO_DESC"
+        ).agg(
+            F.count("*").alias("total_candidatos")
+        )
+        agg_demografia.write.mode("overwrite").parquet(output_demografia_path)
+
+    print("================================================================")
+print("🎉 Pipeline de transformação concluído com sucesso!")
+print("📊 Série histórica consolidada (2021 a 2025) pronta para o painel.")
+print("================================================================")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Pipeline de Transformação ENEM Plurianual")

@@ -138,6 +138,7 @@ try:
         notas_renda_path = f"data/processed/enem_{year}_agg_notas_renda_parquet"
         rede_path = f"data/processed/enem_{year}_agg_rede_ensino_parquet"
         socio_escola_path = f"data/processed/enem_{year}_agg_socio_escola_parquet"
+        demografia_path = f"data/processed/enem_{year}_agg_demografia_parquet"
         
         enem_dict = {}
         if os.path.exists(dict_path):
@@ -165,16 +166,18 @@ try:
                 available_cols = dataset.schema.names
                 desired_cols = [
                     'SG_UF_PROVA', 'IN_TREINEIRO', 'IN_TREINEIRO_DESC',
-                    'TP_SEXO', 'TP_SEXO_DESC', 'Q006', 'Q006_DESC'
+                    'TP_SEXO', 'TP_SEXO_DESC', 'Q006', 'Q006_DESC', 'Q007', 'Q007_DESC',
+                    'RENDA_FAMILIAR_COD', 'RENDA_FAMILIAR_DESC', 'TRABALHO_COND_DESC'
                 ]
                 cols_to_load = [c for c in desired_cols if c in available_cols]
                 
-                # Para evitar consumo excessivo de RAM em anos com milhões de linhas, lemos com limite de lote ou usamos as agregações prontas
+                # Para evitar consumo excessivo de RAM em anos com milhões de linhas, lemos com limite de lote
                 scanner = dataset.scanner(columns=cols_to_load, batch_size=100000)
-                # Pega apenas o primeiro lote robusto para amostragem interativa rápida sem estourar a RAM
                 for batch in scanner.to_batches():
                     df = batch.to_pandas()
                     break
+                if not df.empty and "IN_TREINEIRO" in df.columns:
+                    df["IN_TREINEIRO"] = df["IN_TREINEIRO"].astype(str)
             except Exception as ex:
                 st.sidebar.warning(f"Aviso ao carregar parquet otimizado: {ex}")
                 df = pd.DataFrame()
@@ -182,6 +185,7 @@ try:
         df_notas_uf = safe_read_parquet(notas_uf_path)
         df_notas_renda = safe_read_parquet(notas_renda_path)
         df_socio_escola = safe_read_parquet(socio_escola_path)
+        df_demografia = safe_read_parquet(demografia_path)
 
         rede_files = glob.glob("data/processed/enem_*_agg_rede_ensino_parquet")
         df_rede_plurianual_list = []
@@ -208,7 +212,7 @@ try:
             with open(insights_path, "r", encoding="utf-8") as f:
                 ml_insights = json.load(f)
                 
-        return df, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, ml_insights, enem_dict
+        return df, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, df_demografia, ml_insights, enem_dict
 
     # --- PAINEL LATERAL (SIDEBAR) COM EXPANDERS ---
     st.sidebar.image("https://img.icons8.com/isometric-line/100/education.png", width=50)
@@ -216,7 +220,7 @@ try:
     selected_year = st.sidebar.selectbox("Selecione o Ano do ENEM:", ["2025", "2024", "2023", "2022", "2021"], index=0)
     st.sidebar.divider()
 
-    df_raw, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, ml_insights, enem_dict = load_data(selected_year)
+    df_raw, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, df_demografia, ml_insights, enem_dict = load_data(selected_year)
 
     # Header da Aplicação
     st.markdown(f"""
@@ -274,26 +278,55 @@ try:
     selected_treineiro_values = [treineiro_map[label] for label in selected_treineiro_labels]
 
     if not df_raw.empty:
-        filtered_df = df_raw[
-            (df_raw["SG_UF_PROVA"].isin(selected_ufs)) &
-            (df_raw["IN_TREINEIRO"].isin(selected_treineiro_values))
-        ]
+        df_raw["IN_TREINEIRO"] = df_raw["IN_TREINEIRO"].astype(str)
+        if "IN_TREINEIRO_DESC" in df_raw.columns:
+            filtered_df = df_raw[
+                (df_raw["SG_UF_PROVA"].isin(selected_ufs)) &
+                (df_raw["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels))
+            ]
+        else:
+            filtered_df = df_raw[
+                (df_raw["SG_UF_PROVA"].isin(selected_ufs)) &
+                (df_raw["IN_TREINEIRO"].isin(selected_treineiro_values))
+            ]
     else:
         filtered_df = pd.DataFrame()
 
-    # Cards KPI Gerais do Topo (baseados em agregados oficiais para precisão e leveza)
+    # Cards KPI Gerais do Topo (baseados em agregados oficiais de 100% da população ~3,5M)
     c1, c2, c3, c4 = st.columns(4)
-    total_inscritos = int(df_rede["total_candidatos"].sum()) if not df_rede.empty else len(filtered_df)
-    total_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "1"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else 0
-    total_nao_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "0"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else total_inscritos
-    top_uf = filtered_df["SG_UF_PROVA"].value_counts().idxmax() if not filtered_df.empty and "SG_UF_PROVA" in filtered_df.columns else (selected_ufs[0] if selected_ufs else "SP")
+    if not df_notas_uf.empty and "SG_UF_PROVA" in df_notas_uf.columns:
+        df_kpi_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()
+        if "IN_TREINEIRO_DESC" in df_kpi_uf.columns:
+            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
+            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())
+            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Treineiro"]["total_candidatos"].sum())
+            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Não Treineiro"]["total_candidatos"].sum())
+        elif "IN_TREINEIRO" in df_kpi_uf.columns:
+            df_kpi_uf["IN_TREINEIRO"] = df_kpi_uf["IN_TREINEIRO"].astype(str)
+            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO"].isin(selected_treineiro_values)]
+            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())
+            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "1"]["total_candidatos"].sum())
+            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "0"]["total_candidatos"].sum())
+        else:
+            df_kpi_filtered = df_kpi_uf
+            total_inscritos = int(df_kpi_uf["total_candidatos"].sum())
+            total_treineiros = 0
+            total_nao_treineiros = total_inscritos
+            
+        uf_totals = df_kpi_filtered.groupby("SG_UF_PROVA")["total_candidatos"].sum()
+        top_uf = uf_totals.idxmax() if not uf_totals.empty else (selected_ufs[0] if selected_ufs else "SP")
+    else:
+        total_inscritos = int(df_rede["total_candidatos"].sum()) if not df_rede.empty else len(filtered_df)
+        total_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "1"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else 0
+        total_nao_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "0"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else total_inscritos
+        top_uf = filtered_df["SG_UF_PROVA"].value_counts().idxmax() if not filtered_df.empty and "SG_UF_PROVA" in filtered_df.columns else (selected_ufs[0] if selected_ufs else "SP")
 
     with c1:
         st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Total de Inscritos</div><div class="metric-value-clean">{total_inscritos:,.0f}</div></div>', unsafe_allow_html=True)
     with c2:
-        st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Amostra Treineiros</div><div class="metric-value-clean">{total_treineiros:,.0f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Total Treineiros</div><div class="metric-value-clean">{total_treineiros:,.0f}</div></div>', unsafe_allow_html=True)
     with c3:
-        st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Amostra Regulares</div><div class="metric-value-clean">{total_nao_treineiros:,.0f}</div></div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Total Regulares</div><div class="metric-value-clean">{total_nao_treineiros:,.0f}</div></div>', unsafe_allow_html=True)
     with c4:
         st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Estado Destaque</div><div class="metric-value-clean">{top_uf}</div></div>', unsafe_allow_html=True)
 
@@ -312,7 +345,24 @@ try:
         col_left, col_right = st.columns([6, 4])
         with col_left:
             st.subheader("Inscritos por Estado (UF)")
-            if not filtered_df.empty:
+            if not df_notas_uf.empty and "SG_UF_PROVA" in df_notas_uf.columns:
+                df_uf_agg = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()
+                if "IN_TREINEIRO_DESC" in df_uf_agg.columns:
+                    df_uf_agg = df_uf_agg[df_uf_agg["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
+                elif "IN_TREINEIRO" in df_uf_agg.columns:
+                    df_uf_agg["IN_TREINEIRO"] = df_uf_agg["IN_TREINEIRO"].astype(str)
+                    df_uf_agg = df_uf_agg[df_uf_agg["IN_TREINEIRO"].isin(selected_treineiro_values)]
+                
+                uf_counts = df_uf_agg.groupby("SG_UF_PROVA")["total_candidatos"].sum().reset_index()
+                uf_counts.columns = ["SG_UF_PROVA", "total_inscritos"]
+                fig_uf = px.bar(
+                    uf_counts.sort_values(by="total_inscritos", ascending=True),
+                    x="total_inscritos", y="SG_UF_PROVA", orientation="h",
+                    text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"
+                )
+                fig_uf.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450, coloraxis_showscale=False)
+                st.plotly_chart(fig_uf)
+            elif not filtered_df.empty:
                 uf_counts = filtered_df["SG_UF_PROVA"].value_counts().reset_index()
                 uf_counts.columns = ["SG_UF_PROVA", "total_inscritos"]
                 fig_uf = px.bar(
@@ -323,10 +373,22 @@ try:
                 fig_uf.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450, coloraxis_showscale=False)
                 st.plotly_chart(fig_uf)
             else:
-                st.info("Dados detalhados por UF não carregados na amostra.")
+                st.info("Dados detalhados por UF não carregados.")
         with col_right:
-            st.subheader("Distribuição por Sexo (Amostra)")
-            if not filtered_df.empty:
+            st.subheader("Distribuição por Sexo")
+            if not df_demografia.empty and "TP_SEXO_DESC" in df_demografia.columns:
+                df_demo_filt = df_demografia[df_demografia["SG_UF_PROVA"].isin(selected_ufs)].copy()
+                if "IN_TREINEIRO_DESC" in df_demo_filt.columns:
+                    df_demo_filt = df_demo_filt[df_demo_filt["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
+                elif "IN_TREINEIRO" in df_demo_filt.columns:
+                    df_demo_filt["IN_TREINEIRO"] = df_demo_filt["IN_TREINEIRO"].astype(str)
+                    df_demo_filt = df_demo_filt[df_demo_filt["IN_TREINEIRO"].isin(selected_treineiro_values)]
+                
+                sex_counts = df_demo_filt.groupby("TP_SEXO_DESC")["total_candidatos"].sum()
+                fig_pie = go.Figure(data=[go.Pie(labels=sex_counts.index.tolist(), values=sex_counts.values.tolist(), hole=.5, marker_colors=["#ec4899", "#2563eb"])])
+                fig_pie.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450)
+                st.plotly_chart(fig_pie)
+            elif not filtered_df.empty:
                 sex_col = "TP_SEXO_DESC" if "TP_SEXO_DESC" in filtered_df.columns else "TP_SEXO"
                 sex_counts = filtered_df[sex_col].value_counts()
                 fig_pie = go.Figure(data=[go.Pie(labels=sex_counts.index.tolist(), values=sex_counts.values.tolist(), hole=.5, marker_colors=["#ec4899", "#2563eb"])])
@@ -337,22 +399,53 @@ try:
 
     # === ABA 2: PERFIL SOCIOECONÔMICO & DEMOGRÁFICO ===
     with tab2:
-        st.subheader("💰 Distribuição por Faixa de Renda Familiar (`Q006`)")
-        if not filtered_df.empty and "Q006" in filtered_df.columns:
-            if "Q006_DESC" in filtered_df.columns:
-                display_series = filtered_df["Q006"] + " — " + filtered_df["Q006_DESC"]
-            else:
-                display_series = filtered_df["Q006"]
+        st.subheader("💰 Distribuição por Faixa de Renda Familiar")
+        if not df_notas_renda.empty:
+            df_renda_filt = df_notas_renda.copy()
+            if "IN_TREINEIRO_DESC" in df_renda_filt.columns:
+                df_renda_filt = df_renda_filt[df_renda_filt["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
+            elif "IN_TREINEIRO" in df_renda_filt.columns:
+                df_renda_filt["IN_TREINEIRO"] = df_renda_filt["IN_TREINEIRO"].astype(str)
+                df_renda_filt = df_renda_filt[df_renda_filt["IN_TREINEIRO"].isin(selected_treineiro_values)]
             
-            renda_counts = display_series.value_counts().reset_index()
-            renda_counts.columns = ["Faixa_Renda", "total_inscritos"]
+            cod_col = "RENDA_FAMILIAR_COD" if "RENDA_FAMILIAR_COD" in df_renda_filt.columns else ("Q006" if "Q006" in df_renda_filt.columns else df_renda_filt.columns[1])
+            desc_col = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in df_renda_filt.columns else ("Q006_DESC" if "Q006_DESC" in df_renda_filt.columns else cod_col)
+            
+            df_renda_agg = df_renda_filt.groupby([cod_col, desc_col])["total_candidatos"].sum().reset_index()
+            df_renda_agg["Faixa_Renda"] = df_renda_agg[cod_col].astype(str) + " — " + df_renda_agg[desc_col].astype(str)
+            df_renda_agg = df_renda_agg.sort_values(by=cod_col)
+            
             fig_renda = px.bar(
-                renda_counts.sort_values(by="Faixa_Renda"),
-                x="Faixa_Renda", y="total_inscritos",
-                color="total_inscritos", color_continuous_scale="Blues", text_auto=".2s"
+                df_renda_agg,
+                x="Faixa_Renda", y="total_candidatos",
+                color="total_candidatos", color_continuous_scale="Blues", text_auto=".2s",
+                labels={"Faixa_Renda": "Faixa de Renda Familiar", "total_candidatos": "Total de Candidatos"}
             )
-            fig_renda.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=420, coloraxis_showscale=False)
+            fig_renda.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450, coloraxis_showscale=False)
             st.plotly_chart(fig_renda)
+        elif not filtered_df.empty:
+            cod_col = "RENDA_FAMILIAR_COD" if "RENDA_FAMILIAR_COD" in filtered_df.columns else "Q006"
+            desc_col = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in filtered_df.columns else "Q006_DESC"
+            
+            if cod_col in filtered_df.columns and desc_col in filtered_df.columns:
+                display_series = filtered_df[cod_col].astype(str) + " — " + filtered_df[desc_col].astype(str)
+            elif cod_col in filtered_df.columns:
+                display_series = filtered_df[cod_col].astype(str)
+            else:
+                display_series = pd.Series(dtype=str)
+            
+            if not display_series.empty:
+                renda_counts = display_series.value_counts().reset_index()
+                renda_counts.columns = ["Faixa_Renda", "total_inscritos"]
+                fig_renda = px.bar(
+                    renda_counts.sort_values(by="Faixa_Renda"),
+                    x="Faixa_Renda", y="total_inscritos",
+                    color="total_inscritos", color_continuous_scale="Blues", text_auto=".2s"
+                )
+                fig_renda.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=420, coloraxis_showscale=False)
+                st.plotly_chart(fig_renda)
+            else:
+                st.info("Dados de renda familiar não disponíveis no recorte atual.")
         else:
             st.info("Dados de renda familiar não disponíveis no recorte atual.")
 
