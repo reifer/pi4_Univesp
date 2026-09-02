@@ -1,4 +1,4 @@
-data/
+data/raw
 data/tmp_spill/
 .venv/
 __pycache__/
