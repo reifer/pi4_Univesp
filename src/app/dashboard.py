@@ -6,6 +6,7 @@ import pyarrow.dataset as ds
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from pages.conclusao_estrategica import render as render_conclusao_estrategica
 
 # Configuração inicial da página (Tema claro profissional & responsivo)
 st.set_page_config(
@@ -59,21 +60,6 @@ st.markdown("""
     span[data-baseweb="tag"] span {
         color: #FFFFFF !important;
         font-weight: 600 !important;
-    }
-    button[data-baseweb="tab"] {
-        color: #475569 !important;
-        font-size: 0.95rem !important;
-        font-weight: 600 !important;
-        background-color: transparent !important;
-        border-radius: 8px 8px 0 0 !important;
-        padding: 10px 18px !important;
-        border: none !important;
-    }
-    button[data-baseweb="tab"][aria-selected="true"] {
-        color: #2563EB !important;
-        border-bottom: 3px solid #2563EB !important;
-        background-color: #FFFFFF !important;
-        box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.05) !important;
     }
     .clean-card {
         background: #FFFFFF;
@@ -158,7 +144,6 @@ try:
                     return pd.DataFrame()
             return pd.DataFrame()
 
-        # Otimização Crítica de Memória: Lê apenas uma amostra/metadados essenciais ou usa agregados diretos para evitar OOM em anos grandes (ex: 2023)
         df = pd.DataFrame()
         if os.path.exists(enriched_parquet_path):
             try:
@@ -171,7 +156,6 @@ try:
                 ]
                 cols_to_load = [c for c in desired_cols if c in available_cols]
                 
-                # Para evitar consumo excessivo de RAM em anos com milhões de linhas, lemos com limite de lote
                 scanner = dataset.scanner(columns=cols_to_load, batch_size=100000)
                 for batch in scanner.to_batches():
                     df = batch.to_pandas()
@@ -216,8 +200,27 @@ try:
 
     # --- PAINEL LATERAL (SIDEBAR) COM EXPANDERS ---
     st.sidebar.image("https://img.icons8.com/isometric-line/100/education.png", width=50)
-    st.sidebar.title("🎛️ Filtros de Pesquisa")
+    st.sidebar.title("🎛️ Painel de Controle")
+    
     selected_year = st.sidebar.selectbox("Selecione o Ano do ENEM:", ["2025", "2024", "2023", "2022", "2021"], index=0)
+    st.sidebar.divider()
+
+    # NAVEGAÇÃO MOBILE-FIRST (SUBSTITUINDO AS ABAS HORIZONTAIS)
+    st.sidebar.markdown("### 🧭 Módulos de Análise")
+    menu_opcao = st.sidebar.radio(
+        "Selecione a Seção:",
+        options=[
+            "📊 Panorama Geográfico (UF)",
+            "💰 Perfil Socioeconômico & Demográfico",
+            "🏫 Redes de Ensino & Plurianual",
+            "📈 Desempenho & Notas (TRI)",
+            "🤖 Machine Learning & IA",
+            "🌎 Geopolítica & Séries Temporais",
+            "🎓 Conclusão Estratégica"
+        ],
+        index=0,
+        label_visibility="collapsed"
+    )
     st.sidebar.divider()
 
     df_raw, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, df_demografia, ml_insights, enem_dict = load_data(selected_year)
@@ -228,7 +231,7 @@ try:
         <div>
             <span class="badge-primary">Projeto Integrador (PI4 Univesp)</span>
             <h1 style="margin-top: 8px; margin-bottom: 0; font-size: 2.1rem;">🎓 ENEM {selected_year} — Analytics & AI Dashboard</h1>
-            <p style="color: #475569; font-size: 1.0rem; margin-top: 4px;">Análise plurianual de desempenho, perfil socioeconômico e granularidade por redes de ensino (Fase 5.1)</p>
+            <p style="color: #475569; font-size: 1.0rem; margin-top: 4px;">Análise plurianual de desempenho, perfil socioeconômico e granularidade por redes de ensino</p>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -246,7 +249,7 @@ try:
     else:
         all_ufs = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"]
 
-    with st.sidebar.expander("📍 Recorte Geográfico", expanded=True):
+    with st.sidebar.expander("📍 Recorte Geográfico", expanded=False):
         select_all_ufs = st.checkbox("Selecionar Todos os Estados (UF)", value=True)
         if select_all_ufs:
             selected_ufs = all_ufs
@@ -262,8 +265,6 @@ try:
         )
 
     st.sidebar.divider()
-
-    st.sidebar.markdown("💡 **OBSERVAÇÕES:**")
     st.sidebar.markdown(
         "💡 <b>OBSERVAÇÕES:</b><br>"
         "O campo <code>TP_DEPENDENCIA_ADM_ESC</code> segmenta detalhadamente as redes de ensino em: "
@@ -292,7 +293,7 @@ try:
     else:
         filtered_df = pd.DataFrame()
 
-    # Cards KPI Gerais do Topo (baseados em agregados oficiais de 100% da população ~3,5M)
+    # Cards KPI Gerais do Topo
     c1, c2, c3, c4 = st.columns(4)
     if not df_notas_uf.empty and "SG_UF_PROVA" in df_notas_uf.columns:
         df_kpi_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()
@@ -330,18 +331,11 @@ try:
     with c4:
         st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Estado Destaque</div><div class="metric-value-clean">{top_uf}</div></div>', unsafe_allow_html=True)
 
-    # Abas estruturadas
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
-        "📊 Panorama Geográfico (UF)",
-        "💰 Perfil Socioeconômico & Demográfico",
-        "🏫 Redes de Ensino & Desempenho Plurianual (Fase 5.1)",
-        "📈 Desempenho & Notas (TRI)",
-        "🤖 Machine Learning & IA",
-        "🌎 Geopolítica & Séries Temporais"
-    ])
+    st.markdown("---")
 
-    # === ABA 1: PANORAMA GEOGRÁFICO ===
-    with tab1:
+    # === RENDERIZAÇÃO CONDICIONAL POR MÓDULO (MOBILE-FIRST) ===
+
+    if menu_opcao == "📊 Panorama Geográfico (UF)":
         col_left, col_right = st.columns([6, 4])
         with col_left:
             st.subheader("Inscritos por Estado (UF)")
@@ -361,7 +355,7 @@ try:
                     text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"
                 )
                 fig_uf.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450, coloraxis_showscale=False)
-                st.plotly_chart(fig_uf)
+                st.plotly_chart(fig_uf, width="stretch")
             elif not filtered_df.empty:
                 uf_counts = filtered_df["SG_UF_PROVA"].value_counts().reset_index()
                 uf_counts.columns = ["SG_UF_PROVA", "total_inscritos"]
@@ -371,7 +365,7 @@ try:
                     text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"
                 )
                 fig_uf.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450, coloraxis_showscale=False)
-                st.plotly_chart(fig_uf)
+                st.plotly_chart(fig_uf, width="stretch")
             else:
                 st.info("Dados detalhados por UF não carregados.")
         with col_right:
@@ -387,18 +381,17 @@ try:
                 sex_counts = df_demo_filt.groupby("TP_SEXO_DESC")["total_candidatos"].sum()
                 fig_pie = go.Figure(data=[go.Pie(labels=sex_counts.index.tolist(), values=sex_counts.values.tolist(), hole=.5, marker_colors=["#ec4899", "#2563eb"])])
                 fig_pie.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450)
-                st.plotly_chart(fig_pie)
+                st.plotly_chart(fig_pie, width="stretch")
             elif not filtered_df.empty:
                 sex_col = "TP_SEXO_DESC" if "TP_SEXO_DESC" in filtered_df.columns else "TP_SEXO"
                 sex_counts = filtered_df[sex_col].value_counts()
                 fig_pie = go.Figure(data=[go.Pie(labels=sex_counts.index.tolist(), values=sex_counts.values.tolist(), hole=.5, marker_colors=["#ec4899", "#2563eb"])])
                 fig_pie.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450)
-                st.plotly_chart(fig_pie)
+                st.plotly_chart(fig_pie, width="stretch")
             else:
                 st.info("Distribuição de sexo não disponível.")
 
-    # === ABA 2: PERFIL SOCIOECONÔMICO & DEMOGRÁFICO ===
-    with tab2:
+    elif menu_opcao == "💰 Perfil Socioeconômico & Demográfico":
         st.subheader("💰 Distribuição por Faixa de Renda Familiar")
         if not df_notas_renda.empty:
             df_renda_filt = df_notas_renda.copy()
@@ -422,7 +415,7 @@ try:
                 labels={"Faixa_Renda": "Faixa de Renda Familiar", "total_candidatos": "Total de Candidatos"}
             )
             fig_renda.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450, coloraxis_showscale=False)
-            st.plotly_chart(fig_renda)
+            st.plotly_chart(fig_renda, width="stretch")
         elif not filtered_df.empty:
             cod_col = "RENDA_FAMILIAR_COD" if "RENDA_FAMILIAR_COD" in filtered_df.columns else "Q006"
             desc_col = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in filtered_df.columns else "Q006_DESC"
@@ -443,14 +436,13 @@ try:
                     color="total_inscritos", color_continuous_scale="Blues", text_auto=".2s"
                 )
                 fig_renda.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=420, coloraxis_showscale=False)
-                st.plotly_chart(fig_renda)
+                st.plotly_chart(fig_renda, width="stretch")
             else:
                 st.info("Dados de renda familiar não disponíveis no recorte atual.")
         else:
             st.info("Dados de renda familiar não disponíveis no recorte atual.")
 
-    # === ABA 3: REDES DE ENSINO & DESEMPENHO PLURIANUAL (FASE 5.1) ===
-    with tab3:
+    elif menu_opcao == "🏫 Redes de Ensino & Plurianual":
         st.markdown(f"### 🏫 Granularidade e Desempenho por Rede de Ensino — ENEM {selected_year} & Plurianual")
         st.markdown(
             "Análise detalhada baseada no campo oficial **`TP_DEPENDENCIA_ADM_ESC`** (1 = Federal, 2 = Estadual, 3 = Municipal, 4 = Privada), "
@@ -545,7 +537,6 @@ try:
                 """, unsafe_allow_html=True)
 
             st.markdown("---")
-
             st.markdown("#### 1️⃣ Volumetria de Alunos por Dependência Administrativa")
             col_v1, col_v2 = st.columns([5, 5])
             
@@ -561,7 +552,7 @@ try:
                     labels={"TP_DEPENDENCIA_ADM_ESC_DESC": "Rede de Ensino", "total_candidatos": "Total de Candidatos"}
                 )
                 fig_vol.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=350, showlegend=False)
-                st.plotly_chart(fig_vol)
+                st.plotly_chart(fig_vol, width="stretch")
 
             with col_v2:
                 st.markdown("##### Proporção / Participação (%)")
@@ -574,10 +565,9 @@ try:
                     color_discrete_map=COLOR_MAP_REDE
                 )
                 fig_donut.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=350)
-                st.plotly_chart(fig_donut)
+                st.plotly_chart(fig_donut, width="stretch")
 
             st.markdown("---")
-
             st.markdown("#### 2️⃣ Comparativo Multidisciplinar de Desempenho (Barras Agrupadas)")
             _nota_cols = [c for c in ["media_cn", "media_ch", "media_lc", "media_mt", "media_redacao"] if c in redes_identificadas.columns]
             melted_notas = redes_identificadas.melt(
@@ -612,11 +602,10 @@ try:
                 height=450,
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            st.plotly_chart(fig_grouped_bar)
+            st.plotly_chart(fig_grouped_bar, width="stretch")
 
             st.markdown("---")
-
-            st.markdown("#### 3️⃣ Evolução Histórica Plurianual por Rede de Ensino (`px.line`)")
+            st.markdown("#### 3️⃣ Evolução Histórica Plurianual por Rede de Ensino")
             if not df_rede_plurianual.empty and "NU_ANO" in df_rede_plurianual.columns:
                 _uf_mask = (
                     df_rede_plurianual["SG_UF_PROVA"].isin(selected_ufs)
@@ -666,7 +655,7 @@ try:
                             labels={"NU_ANO": "Ano do Exame", metric_to_plot: "Nota Média", "TP_DEPENDENCIA_ADM_ESC_DESC": "Rede"}
                         )
                         fig_line_notas.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=400)
-                        st.plotly_chart(fig_line_notas)
+                        st.plotly_chart(fig_line_notas, width="stretch")
 
                     with col_line2:
                         fig_line_vol = px.line(
@@ -680,7 +669,7 @@ try:
                             labels={"NU_ANO": "Ano do Exame", "total_candidatos": "Total de Candidatos", "TP_DEPENDENCIA_ADM_ESC_DESC": "Rede"}
                         )
                         fig_line_vol.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=400)
-                        st.plotly_chart(fig_line_vol)
+                        st.plotly_chart(fig_line_vol, width="stretch")
 
             st.markdown("---")
             st.markdown("#### 4️⃣ 🔬 Raio-X Avançado: Impacto Socioeconômico na Escola (`Q006` x `Q007` x Rede)")
@@ -708,10 +697,9 @@ try:
                 )
                 fig_socio.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=450)
                 fig_socio.update_xaxes(tickangle=45)
-                st.plotly_chart(fig_socio)
+                st.plotly_chart(fig_socio, width="stretch")
 
-    # === ABA 4: DESEMPENHO & NOTAS (TRI) ===
-    with tab4:
+    elif menu_opcao == "📈 Desempenho & Notas (TRI)":
         st.subheader(f"📈 Análise de Desempenho e Notas Médias no ENEM {selected_year}")
         if df_notas_uf.empty:
             st.info("Dados agregados de notas não encontrados.")
@@ -740,10 +728,9 @@ try:
                     labels={"value": "Nota Média", "variable": "Disciplina", "SG_UF_PROVA": "Estado (UF)"}
                 )
                 fig_notas_uf.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=400)
-                st.plotly_chart(fig_notas_uf)
+                st.plotly_chart(fig_notas_uf, width="stretch")
 
-    # === ABA 5: MACHINE LEARNING & IA ===
-    with tab5:
+    elif menu_opcao == "🤖 Machine Learning & IA":
         st.subheader("🧠 Performance do Modelo Preditivo")
         if ml_insights and "modelo_machine_learning" in ml_insights:
             metrics = ml_insights["modelo_machine_learning"]["metricas_avaliacao"]
@@ -758,13 +745,12 @@ try:
                 feat_df = pd.DataFrame(ml_insights["modelo_machine_learning"]["features_importantes"])
                 fig_feat = px.bar(feat_df, x="importancia", y="feature", orientation="h", title="Top Features Preditivas")
                 fig_feat.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=350)
-                st.plotly_chart(fig_feat)
+                st.plotly_chart(fig_feat, width="stretch")
         else:
             st.info("Insights de Machine Learning não encontrados.")
 
-    # === ABA 6: GEOPOLÍTICA & SÉRIES TEMPORAIS ===
-    with tab6:
-        st.subheader("🌎 Geopolítica e Séries Temporais Plurianual (Fase 5.3)")
+    elif menu_opcao == "🌎 Geopolítica & Séries Temporais":
+        st.subheader("🌎 Geopolítica e Séries Temporais Plurianual")
         col_g1, col_g2 = st.columns(2)
         
         with col_g1:
@@ -789,7 +775,7 @@ try:
                     title="Médias por Região", labels={"value": "Média", "variable": "Área"}
                 )
                 fig_reg.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380)
-                st.plotly_chart(fig_reg)
+                st.plotly_chart(fig_reg, width="stretch")
                 
         with col_g2:
             st.markdown("##### 📈 Evolução Histórica Nacional Plurianual")
@@ -803,7 +789,10 @@ try:
                     title="Evolução Nacional", labels={"value": "Média", "variable": "Componente"}
                 )
                 fig_time.update_layout(template="plotly_white", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", height=380)
-                st.plotly_chart(fig_time)
+                st.plotly_chart(fig_time, width="stretch")
+
+    elif menu_opcao == "🎓 Conclusão Estratégica":
+        render_conclusao_estrategica()
 
     st.markdown("---")
     st.markdown("<div style='text-align: center; color: #64748b; font-size: 0.85rem;'>Desenvolvido com PySpark, Streamlit & Plotly — Metodologia COFRE — Projeto Integrador (PI4 Univesp)</div>", unsafe_allow_html=True)

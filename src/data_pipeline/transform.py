@@ -8,7 +8,7 @@ from pyspark.sql.window import Window
 
 def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | None = None):
     print(f"\n=======================================================")
-    print(f" Iniciando pipeline de transformação ENEM {year} (Fase 5.1)")
+    print(f" Iniciando pipeline de transformação ENEM {year}")
     print(f"=======================================================")
 
     enriched_output_path = f"data/processed/enem_{year}_enriched_parquet"
@@ -167,7 +167,7 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | N
     df_joined.write.mode("overwrite").parquet(enriched_output_path)
 
     # Agregação Estatística da Fase 5.1: Volumetria e Desempenho por Ano, UF e Rede de Ensino
-    print(f"Gerando agregação da Fase 5.1 (NU_ANO x SG_UF_PROVA x TP_DEPENDENCIA_ADM_ESC_DESC)...")
+    print(f"Gerando agregação da (NU_ANO x SG_UF_PROVA x TP_DEPENDENCIA_ADM_ESC_DESC)...")
     uf_col = "SG_UF_PROVA" if "SG_UF_PROVA" in df_joined.columns else "CO_UF_PROVA"
 
     agg_rede = df_joined.groupBy(
@@ -208,7 +208,7 @@ def run_transformation(spark: SparkSession, year: int = 2025, dict_path: str | N
     agg_rede.write.mode("overwrite").parquet(output_rede_path)
 
     # Agregação Avançada da Fase 5.2 (Socioeconômico x Escola com Colunas Canônicas)
-    print("Gerando agregação avançada (Fase 5.2): Renda (RENDA_FAMILIAR_DESC) x Trabalho x Rede...")
+    print("Gerando agregação avançada: Renda (RENDA_FAMILIAR_DESC) x Trabalho x Rede...")
     agg_socio_escola = df_joined.groupBy(
         "NU_ANO",
         "TP_DEPENDENCIA_ADM_ESC_DESC", 

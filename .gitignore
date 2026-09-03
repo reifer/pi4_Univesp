@@ -2,3 +2,5 @@ data/raw
 data/tmp_spill/
 .venv/
 __pycache__/
+data/processed/*_cleaned_parquet/
+data/processed/*_enriched_parquet/
