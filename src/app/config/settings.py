@@ -11,13 +11,14 @@ COLOR_MAP_REDE = {
 }
 
 def apply_custom_css():
-    """Aplica a estilização CSS personalizada do dashboard."""
+    """Aplica a estilização CSS personalizada e responsiva do dashboard."""
     st.markdown("""
     <style>
         .stApp, .main, .block-container {
             background-color: #F8FAFC !important;
             color: #0F172A !important;
             font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            max-width: 100%;
         }
         .main h1, .main h2, .main h3, .main h4, .main h5, .main h6 {
             color: #0F172A !important;
@@ -61,7 +62,7 @@ def apply_custom_css():
             border: 1px solid #E2E8F0;
             border-radius: 12px;
             padding: 18px 20px;
-            margin-bottom: 15px;
+            margin-bottom: 16px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
         }
         .badge-primary {
@@ -92,6 +93,21 @@ def apply_custom_css():
             color: #10B981;
             font-weight: 600;
             margin-top: 4px;
+        }
+        
+        /* Ajustes responsivos avançados para mobile */
+        @media (max-width: 768px) {
+            .block-container {
+                padding-left: 1rem;
+                padding-right: 1rem;
+            }
+            .clean-card {
+                padding: 14px;
+                margin-bottom: 12px;
+            }
+            .metric-value-clean {
+                font-size: 1.5rem;
+            }
         }
     </style>
     """, unsafe_allow_html=True)

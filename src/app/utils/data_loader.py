@@ -18,6 +18,7 @@ def load_data(year="2025"):
     rede_path = f"data/processed/enem_{year}_agg_rede_ensino_parquet"
     socio_escola_path = f"data/processed/enem_{year}_agg_socio_escola_parquet"
     demografia_path = f"data/processed/enem_{year}_agg_demografia_parquet"
+    renda_raca_path = f"data/processed/enem_{year}_agg_renda_raca_parquet"
     
     enem_dict = {}
     if os.path.exists(dict_path):
@@ -45,7 +46,7 @@ def load_data(year="2025"):
             desired_cols = [
                 'SG_UF_PROVA', 'IN_TREINEIRO', 'IN_TREINEIRO_DESC',
                 'TP_SEXO', 'TP_SEXO_DESC', 'Q006', 'Q006_DESC', 'Q007', 'Q007_DESC',
-                'RENDA_FAMILIAR_COD', 'RENDA_FAMILIAR_DESC', 'TRABALHO_COND_DESC'
+                'RENDA_FAMILIAR_COD', 'RENDA_FAMILIAR_DESC', 'TRABALHO_COND_DESC', 'TP_COR_RACA_DESC'
             ]
             cols_to_load = [c for c in desired_cols if c in available_cols]
             
@@ -63,6 +64,7 @@ def load_data(year="2025"):
     df_notas_renda = safe_read_parquet(notas_renda_path)
     df_socio_escola = safe_read_parquet(socio_escola_path)
     df_demografia = safe_read_parquet(demografia_path)
+    df_renda_raca = safe_read_parquet(renda_raca_path)
 
     rede_files = glob.glob("data/processed/enem_*_agg_rede_ensino_parquet")
     df_rede_plurianual_list = []
@@ -89,4 +91,4 @@ def load_data(year="2025"):
         with open(insights_path, "r", encoding="utf-8") as f:
             ml_insights = json.load(f)
             
-    return df, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, df_demografia, ml_insights, enem_dict
+    return df, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, df_demografia, ml_insights, enem_dict, df_renda_raca

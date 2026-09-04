@@ -16,6 +16,7 @@ def process_enrichment_and_aggregations(spark: SparkSession, year: int = 2025, d
     output_notas_uf_path = f"data/processed/enem_{year}_agg_notas_uf_parquet"
     output_notas_renda_path = f"data/processed/enem_{year}_agg_notas_renda_parquet"
     output_demografia_path = f"data/processed/enem_{year}_agg_demografia_parquet"
+    output_renda_raca_path = f"data/processed/enem_{year}_agg_renda_raca_parquet"
 
     input_path = f"data/processed/enem_{year}_cleaned_parquet"
     if not os.path.exists(input_path):
@@ -234,5 +235,20 @@ def process_enrichment_and_aggregations(spark: SparkSession, year: int = 2025, d
             "NU_ANO", uf_col, "TP_SEXO_DESC", "IN_TREINEIRO", "IN_TREINEIRO_DESC"
         ).agg(F.count("*").alias("total_candidatos"))
         agg_demografia.write.mode("overwrite").parquet(output_demografia_path)
+
+    # Agregação 6: Renda Familiar x Raça/Cor x Desempenho
+    print("Gerando agregação avançada: Renda Familiar x Raça/Cor x Desempenho...")
+    if "RENDA_FAMILIAR_DESC" in df_joined.columns and "TP_COR_RACA_DESC" in df_joined.columns:
+        agg_renda_raca = df_joined.groupBy(
+            "NU_ANO", "RENDA_FAMILIAR_DESC", "TP_COR_RACA_DESC"
+        ).agg(
+            F.count("*").alias("total_candidatos"),
+            F.round(F.avg("NU_NOTA_CN"), 2).alias("media_cn"),
+            F.round(F.avg("NU_NOTA_CH"), 2).alias("media_ch"),
+            F.round(F.avg("NU_NOTA_LC"), 2).alias("media_lc"),
+            F.round(F.avg("NU_NOTA_MT"), 2).alias("media_mt"),
+            F.round(F.avg("NU_NOTA_REDACAO"), 2).alias("media_redacao")
+        )
+        agg_renda_raca.write.mode("overwrite").parquet(output_renda_raca_path)
 
     print(f"✅ Transformação do ano {year} concluída com sucesso!")
