@@ -1,12 +1,18 @@
+import sys
+from pathlib import Path
+
 import streamlit as st
 
-# Importação absoluta corrigida para compatibilidade total com o Streamlit Cloud
-from pages.conclusao_modules.rede_estrategica import render as render_rede
-from pages.conclusao_modules.renda_estrategica import render as render_renda
-from pages.conclusao_modules.raca_estrategica import render as render_raca
-from pages.conclusao_modules.trabalho_estrategica import render as render_trabalho
-from pages.conclusao_modules.demografia_estrategica import render as render_demografia
-from pages.conclusao_modules.sintese_estrategica import render as render_sintese
+src_dir = Path(__file__).resolve().parents[2]
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
+
+from app.pages.conclusao_modules.rede_estrategica import render as render_rede
+from app.pages.conclusao_modules.renda_estrategica import render as render_renda
+from app.pages.conclusao_modules.raca_estrategica import render as render_raca
+from app.pages.conclusao_modules.trabalho_estrategica import render as render_trabalho
+from app.pages.conclusao_modules.demografia_estrategica import render as render_demografia
+from app.pages.conclusao_modules.sintese_estrategica import render as render_sintese
 
 def render():
     """Função principal que orquestra e renderiza todas as fases da Conclusão Estratégica em sequência."""

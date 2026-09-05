@@ -1,24 +1,23 @@
 import sys
 from pathlib import Path
 
-# Adiciona o diretório atual (src/app) ao sys.path para garantir importações absolutas consistentes no Streamlit Cloud
-current_dir = Path(__file__).resolve().parent
-if str(current_dir) not in sys.path:
-    sys.path.append(str(current_dir))
+src_dir = Path(__file__).resolve().parents[1]
+if str(src_dir) not in sys.path:
+    sys.path.insert(0, str(src_dir))
 
 import pandas as pd
 import streamlit as st
-from config.settings import COLOR_MAP_REDE, apply_custom_css
-from utils.data_loader import load_data
-from pages.conclusao_estrategica import render as render_conclusao_estrategica
+from app.config.settings import COLOR_MAP_REDE, apply_custom_css
+from app.utils.data_loader import load_data
+from app.pages.conclusao_estrategica import render as render_conclusao_estrategica
 
 # Importação dos Componentes Modulares
-from components.geo_view import render_geo_view
-from components.socio_view import render_socio_view
-from components.rede_view import render_rede_view
-from components.desempenho_view import render_desempenho_view
-from components.ml_view import render_ml_view
-from components.geopolitica_view import render_geopolitica_view
+from app.components.geo_view import render_geo_view
+from app.components.socio_view import render_socio_view
+from app.components.rede_view import render_rede_view
+from app.components.desempenho_view import render_desempenho_view
+from app.components.ml_view import render_ml_view
+from app.components.geopolitica_view import render_geopolitica_view
 
 # Configuração inicial da página (Layout Wide & Sidebar Oculta)
 st.set_page_config(
