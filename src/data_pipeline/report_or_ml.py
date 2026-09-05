@@ -39,7 +39,8 @@ def run_ml_and_generate_report():
 
     lr = LogisticRegression(featuresCol="features", labelCol="label", maxIter=20)
 
-    pipeline = Pipeline(stages=indexers + [assembler, lr])
+    stages: list = [*indexers, assembler, lr]
+    pipeline = Pipeline(stages=stages)
 
     # 2. Divisão Treino / Teste (amostragem para treino rápido e eficiente)
     sample_df = df.sample(withReplacement=False, fraction=0.1, seed=42)

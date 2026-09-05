@@ -65,7 +65,7 @@ def render():
             st.success(f"✅ Dados de infraestrutura e socioeconomia carregados com sucesso para o ENEM {ano_f4}.")
             
             if "TP_DEPENDENCIA_ADM_ESC_DESC" in df_socio_ano.columns:
-                redes_disp = df_socio_ano["TP_DEPENDENCIA_ADM_ESC_DESC"].unique()
+                redes_disp: list[str] = df_socio_ano["TP_DEPENDENCIA_ADM_ESC_DESC"].unique().tolist()
                 rede_sel = st.selectbox("Filtrar por Dependência Administrativa:", options=redes_disp, key=f"f4_rede_{ano_f4}")
                 df_socio_ano = df_socio_ano[df_socio_ano["TP_DEPENDENCIA_ADM_ESC_DESC"] == rede_sel]
             

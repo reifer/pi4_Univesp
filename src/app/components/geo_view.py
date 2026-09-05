@@ -24,7 +24,7 @@ def render_geo_view(selected_ufs, selected_treineiro_labels, selected_treineiro_
                 fig_uf = px.bar(
                     uf_counts.sort_values(by="total_inscritos", ascending=True),
                     x="total_inscritos", y="SG_UF_PROVA", orientation="h",
-                    text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"
+                    text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"  # type: ignore[reportArgumentType]
                 )
                 fig_uf.update_layout(
                     template="plotly_white", 
@@ -41,7 +41,7 @@ def render_geo_view(selected_ufs, selected_treineiro_labels, selected_treineiro_
                 fig_uf = px.bar(
                     uf_counts.sort_values(by="total_inscritos", ascending=True),
                     x="total_inscritos", y="SG_UF_PROVA", orientation="h",
-                    text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"
+                    text_auto=".2s", color="total_inscritos", color_continuous_scale="Blues"  # type: ignore[reportArgumentType]
                 )
                 fig_uf.update_layout(
                     template="plotly_white", 

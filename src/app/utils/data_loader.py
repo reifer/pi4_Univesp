@@ -72,7 +72,7 @@ def load_data(year="2025"):
         df_temp = safe_read_parquet(rf)
         if not df_temp.empty:
             if "NU_ANO" in df_temp.columns:
-                df_temp["NU_ANO"] = pd.to_numeric(df_temp["NU_ANO"], errors="coerce").astype("Int64")
+                df_temp["NU_ANO"] = pd.to_numeric(df_temp["NU_ANO"], errors="coerce").astype("Int64")  # type: ignore[reportAttributeAccessIssue]
             df_rede_plurianual_list.append(df_temp)
 
     df_rede_plurianual = pd.concat(df_rede_plurianual_list, ignore_index=True) if df_rede_plurianual_list else pd.DataFrame()
@@ -83,7 +83,7 @@ def load_data(year="2025"):
     else:
         df_rede = safe_read_parquet(rede_path)
         if not df_rede.empty and "NU_ANO" in df_rede.columns:
-            df_rede["NU_ANO"] = pd.to_numeric(df_rede["NU_ANO"], errors="coerce").astype("Int64")
+            df_rede["NU_ANO"] = pd.to_numeric(df_rede["NU_ANO"], errors="coerce").astype("Int64")  # type: ignore[reportAttributeAccessIssue]
             df_rede = df_rede[df_rede["NU_ANO"] == year_int].copy()
 
     ml_insights = {}

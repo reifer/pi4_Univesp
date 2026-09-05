@@ -74,9 +74,9 @@ try:
     treineiro_map = {"Não Treineiro": "0", "Treineiro": "1"}
 
     if not df_raw.empty and "SG_UF_PROVA" in df_raw.columns:
-        all_ufs = sorted(df_raw["SG_UF_PROVA"].dropna().unique())
+        all_ufs = sorted(df_raw["SG_UF_PROVA"].dropna().unique())  # type: ignore[reportAttributeAccessIssue]
     elif not df_rede.empty and "SG_UF_PROVA" in df_rede.columns:
-        all_ufs = sorted(df_rede["SG_UF_PROVA"].dropna().unique())
+        all_ufs = sorted(df_rede["SG_UF_PROVA"].dropna().unique())  # type: ignore[reportAttributeAccessIssue]
     else:
         all_ufs = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"]
 
@@ -108,12 +108,12 @@ try:
         "🎓 Conclusão Estratégica"
     ]
     
-    menu_opcao = st.pills(
+    menu_opcao: str = st.pills(  # type: ignore[assignment]
         "Módulos de Análise",
         options=modulos_disponiveis,
         default="📊 Panorama Geográfico",
         label_visibility="collapsed"
-    )
+    ) or "📊 Panorama Geográfico"
 
     st.markdown("---")
 
@@ -141,31 +141,31 @@ try:
     # --- CARDS KPI GERAIS DO TOPO ---
     c1, c2, c3, c4 = st.columns(4)
     if not df_notas_uf.empty and "SG_UF_PROVA" in df_notas_uf.columns:
-        df_kpi_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()
+        df_kpi_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()  # type: ignore[reportAttributeAccessIssue]
         if "IN_TREINEIRO_DESC" in df_kpi_uf.columns:
-            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
-            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())
-            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Treineiro"]["total_candidatos"].sum())
-            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Não Treineiro"]["total_candidatos"].sum())
+            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]  # type: ignore[reportAttributeAccessIssue]
+            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())  # type: ignore[reportArgumentType]
+            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Treineiro"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
+            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Não Treineiro"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
         elif "IN_TREINEIRO" in df_kpi_uf.columns:
             df_kpi_uf["IN_TREINEIRO"] = df_kpi_uf["IN_TREINEIRO"].astype(str)
-            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO"].isin(selected_treineiro_values)]
-            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())
-            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "1"]["total_candidatos"].sum())
-            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "0"]["total_candidatos"].sum())
+            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO"].isin(selected_treineiro_values)]  # type: ignore[reportAttributeAccessIssue]
+            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())  # type: ignore[reportArgumentType]
+            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "1"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
+            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "0"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
         else:
             df_kpi_filtered = df_kpi_uf
-            total_inscritos = int(df_kpi_uf["total_candidatos"].sum())
+            total_inscritos = int(df_kpi_uf["total_candidatos"].sum())  # type: ignore[reportArgumentType]
             total_treineiros = 0
             total_nao_treineiros = total_inscritos
             
-        uf_totals = df_kpi_filtered.groupby("SG_UF_PROVA")["total_candidatos"].sum()
-        top_uf = uf_totals.idxmax() if not uf_totals.empty else (selected_ufs[0] if selected_ufs else "SP")
+        uf_totals = df_kpi_filtered.groupby("SG_UF_PROVA")["total_candidatos"].sum()  # type: ignore[reportAttributeAccessIssue]
+        top_uf: str = str(uf_totals.idxmax()) if not uf_totals.empty else (selected_ufs[0] if selected_ufs else "SP")  # type: ignore[reportAttributeAccessIssue]
     else:
-        total_inscritos = int(df_rede["total_candidatos"].sum()) if not df_rede.empty else len(filtered_df)
+        total_inscritos = int(df_rede["total_candidatos"].sum()) if not df_rede.empty else len(filtered_df)  # type: ignore[reportArgumentType]
         total_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "1"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else 0
         total_nao_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "0"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else total_inscritos
-        top_uf = filtered_df["SG_UF_PROVA"].value_counts().idxmax() if not filtered_df.empty and "SG_UF_PROVA" in filtered_df.columns else (selected_ufs[0] if selected_ufs else "SP")
+        top_uf = str(filtered_df["SG_UF_PROVA"].value_counts().idxmax()) if not filtered_df.empty and "SG_UF_PROVA" in filtered_df.columns else (selected_ufs[0] if selected_ufs else "SP")  # type: ignore[reportAttributeAccessIssue]
 
     with c1:
         st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Total de Inscritos</div><div class="metric-value-clean">{total_inscritos:,.0f}</div></div>', unsafe_allow_html=True)

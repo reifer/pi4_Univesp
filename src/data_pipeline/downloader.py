@@ -62,7 +62,7 @@ def add_consecutive_index(df, index_col="row_id"):
     
     mapping_expr = F.create_map([F.lit(x) for kv in cum_offset.items() for x in kv])
     
-    return df_indexed.withColumn(index_col, F.col("_row_in_part"] + mapping_expr[F.col("_part_id")]) \
+    return df_indexed.withColumn(index_col, F.col("_row_in_part") + mapping_expr[F.col("_part_id")]) \
                      .drop("_part_id", "_mono_id", "_row_in_part")
 
 

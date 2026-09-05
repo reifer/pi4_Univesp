@@ -78,7 +78,7 @@ def render():
             df_pluri_raca_total = pd.concat(dfs_pluri_raca, ignore_index=True)
             if "RENDA_FAMILIAR_DESC" in df_pluri_raca_total.columns and "TP_COR_RACA_DESC" in df_pluri_raca_total.columns:
                 df_pluri_raca_total["MACRO_RENDA"] = df_pluri_raca_total["RENDA_FAMILIAR_DESC"].apply(_agrupar_faixas_renda_macro)
-                df_agrupado = df_pluri_raca_total.groupby(["MACRO_RENDA", "TP_COR_RACA_DESC"])["media_mt"].mean().reset_index()
+                df_agrupado = df_pluri_raca_total.groupby(["MACRO_RENDA", "TP_COR_RACA_DESC"])["media_mt"].mean().reset_index()  # type: ignore[reportAttributeAccessIssue]
                 
                 with st.container(border=True):
                     fig_raca_pluri = px.bar(
@@ -100,7 +100,7 @@ def render():
         if not df_raca_ano.empty:
             st.success(f"✅ Dados agregados de Renda x Raça carregados com sucesso para o ENEM {ano_f3_raca}.")
             
-            metrica_raca = st.selectbox(
+            metrica_raca: str = st.selectbox(  # type: ignore[assignment]
                 "Métrica de Desempenho:",
                 options=["media_mt", "media_redacao", "media_cn", "media_ch", "media_lc"],
                 format_func=lambda x: {
@@ -111,11 +111,11 @@ def render():
                     "media_lc": "Linguagens e Códigos"
                 }[x],
                 key=f"select_metrica_raca_{ano_f3_raca}"
-            )
+            ) or "media_mt"
             
             if "RENDA_FAMILIAR_DESC" in df_raca_ano.columns and "TP_COR_RACA_DESC" in df_raca_ano.columns:
                 df_raca_ano["MACRO_RENDA"] = df_raca_ano["RENDA_FAMILIAR_DESC"].apply(_agrupar_faixas_renda_macro)
-                df_agrupado_ano = df_raca_ano.groupby(["MACRO_RENDA", "TP_COR_RACA_DESC"])[metrica_raca].mean().reset_index()
+                df_agrupado_ano = df_raca_ano.groupby(["MACRO_RENDA", "TP_COR_RACA_DESC"])[metrica_raca].mean().reset_index()  # type: ignore[reportAttributeAccessIssue]
                 
                 with st.container(border=True):
                     fig_raca_ano = px.bar(

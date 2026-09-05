@@ -48,7 +48,7 @@ def render():
             if "TP_SEXO_DESC" in df_pluri_demo.columns and "NU_ANO" in df_pluri_demo.columns:
                 with st.container(border=True):
                     fig_f5_hist = px.bar(
-                        df_pluri_demo.groupby(["NU_ANO", "TP_SEXO_DESC"])["total_candidatos"].sum().reset_index(),
+                        df_pluri_demo.groupby(["NU_ANO", "TP_SEXO_DESC"])["total_candidatos"].sum().reset_index(),  # type: ignore[reportAttributeAccessIssue]
                         x="NU_ANO", y="total_candidatos", color="TP_SEXO_DESC", barmode="group",
                         title="Evolução Plurianual da Participação por Gênero",
                         labels={"NU_ANO": "Ano do Exame", "total_candidatos": "Total de Inscritos", "TP_SEXO_DESC": "Gênero"}
@@ -68,7 +68,7 @@ def render():
             if "TP_SEXO_DESC" in df_demo_ano.columns:
                 with st.container(border=True):
                     fig_pie_f5 = px.pie(
-                        df_demo_ano.groupby("TP_SEXO_DESC")["total_candidatos"].sum().reset_index(),
+                        df_demo_ano.groupby("TP_SEXO_DESC")["total_candidatos"].sum().reset_index(),  # type: ignore[reportAttributeAccessIssue]
                         names="TP_SEXO_DESC", values="total_candidatos", hole=0.4,
                         title=f"Proporção de Participantes por Gênero — ENEM {ano_f5}",
                         color_discrete_sequence=["#ec4899", "#2563eb"]

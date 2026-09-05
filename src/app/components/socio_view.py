@@ -17,8 +17,8 @@ def render_socio_view(df_notas_renda, selected_treineiro_labels, selected_treine
                 df_renda_filt["IN_TREINEIRO"] = df_renda_filt["IN_TREINEIRO"].astype(str)
                 df_renda_filt = df_renda_filt[df_renda_filt["IN_TREINEIRO"].isin(selected_treineiro_values)]
             
-            cod_col = "RENDA_FAMILIAR_COD" if "RENDA_FAMILIAR_COD" in df_renda_filt.columns else ("Q006" if "Q006" in df_renda_filt.columns else df_renda_filt.columns[1])
-            desc_col = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in df_renda_filt.columns else ("Q006_DESC" if "Q006_DESC" in df_renda_filt.columns else cod_col)
+            cod_col: str = "RENDA_FAMILIAR_COD" if "RENDA_FAMILIAR_COD" in df_renda_filt.columns else ("Q006" if "Q006" in df_renda_filt.columns else str(df_renda_filt.columns[1]))
+            desc_col: str = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in df_renda_filt.columns else ("Q006_DESC" if "Q006_DESC" in df_renda_filt.columns else cod_col)
             
             df_renda_agg = df_renda_filt.groupby([cod_col, desc_col])["total_candidatos"].sum().reset_index()
             df_renda_agg["Faixa_Renda"] = df_renda_agg[cod_col].astype(str) + " — " + df_renda_agg[desc_col].astype(str)
@@ -27,7 +27,7 @@ def render_socio_view(df_notas_renda, selected_treineiro_labels, selected_treine
             fig_renda = px.bar(
                 df_renda_agg,
                 x="Faixa_Renda", y="total_candidatos",
-                color="total_candidatos", color_continuous_scale="Blues", text_auto=".2s",
+                color="total_candidatos", color_continuous_scale="Blues", text_auto=".2s",  # type: ignore[reportArgumentType]
                 labels={"Faixa_Renda": "Faixa de Renda Familiar", "total_candidatos": "Total de Candidatos"}
             )
             fig_renda.update_layout(
@@ -62,7 +62,7 @@ def render_socio_view(df_notas_renda, selected_treineiro_labels, selected_treine
                 fig_renda = px.bar(
                     renda_counts,
                     x="Faixa_Renda", y="total_inscritos",
-                    color="total_inscritos", color_continuous_scale="Blues", text_auto=".2s",
+                    color="total_inscritos", color_continuous_scale="Blues", text_auto=".2s",  # type: ignore[reportArgumentType]
                     labels={"Faixa_Renda": "Faixa de Renda Familiar", "total_inscritos": "Total de Inscritos"}
                 )
                 fig_renda.update_layout(
