@@ -1,6 +1,6 @@
 import streamlit as st
 
-# Importação dos módulos específicos da Conclusão Estratégica
+# Importação usando ponto (.) para indicar que está na mesma pasta (pages)
 from .conclusao_modules.rede_estrategica import render as render_rede
 from .conclusao_modules.renda_estrategica import render as render_renda
 from .conclusao_modules.raca_estrategica import render as render_raca
