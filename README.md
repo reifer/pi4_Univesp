@@ -4,11 +4,13 @@
 
 Este projeto é um **dashboard analítico interativo** para exploração dos microdados do ENEM ao longo de uma série histórica plurianual (2021–2025). A aplicação combina um pipeline de dados em **PySpark** (ingestão, limpeza, enriquecimento e agregações) com uma camada de **Machine Learning** para identificação de perfil de treineiros, e uma interface web construída em **Streamlit** com visualizações interativas em **Plotly**.
 
-A arquitetura é composta por três camadas independentes:
+A arquitetura é composta por três camadas independentes, coordenadas por um orquestrador mestre:
 
-1. **Pipeline de Dados** (`src/data_pipeline/`): ingestão, limpeza, transformação e agregação dos microdados brutos em arquivos Parquet otimizados, processados via PySpark.
+1. **Pipeline de Dados** (`src/data_pipeline/`): o orquestrador mestre (`ingest_all.py`) controla a execução ponta a ponta, em etapas isoladas e sequenciais, da ingestão, limpeza, transformação e agregação dos microdados brutos em arquivos Parquet otimizados, processados via PySpark.
 2. **Dashboard Streamlit** (`src/app/`): camada de visualização, escrita em Pandas/Plotly, que consome os Parquets processados. O layout foi totalmente migrado para **containers nativos do Streamlit** (`st.container(border=True)`), garantindo consistência visual sem depender de HTML/CSS customizado para agrupamento de conteúdo.
 3. **Modelos de ML** (`src/data_pipeline/report_or_ml.py`): treinamento de um classificador (Regressão Logística via PySpark ML) e exportação de métricas/insights em JSON (`data/processed/enem_*_ml_insights.json`), consumidos pela aba de Machine Learning do dashboard.
+
+O `ingest_all.py` funciona exclusivamente como controlador/dispatcher: executa a ingestão e limpeza, aguarda seu sucesso, aciona `transform.py`, aguarda novamente e então aciona `report_or_ml.py`. As fases posteriores são executadas por subprocessos com validação de status (`check=True`), reduzindo o risco de estouro de memória e interrompendo o fluxo imediatamente em caso de falha. O encerramento de cada etapa e do pipeline completo é sinalizado com status `[OK]` ou `[NOK]`.
 
 O projeto também conta com uma **suíte de testes automatizados (Pytest)**, cobrindo pipeline de dados, artefatos de ML e a importabilidade das views do dashboard, e é **verificado estaticamente com Pyright** para tipagem, sem depender de containers Docker em tempo de execução (execução via interpretador Python local/`.venv`).
 
@@ -81,7 +83,7 @@ my-data-project/
 │   │   └── utils/
 │   │       └── data_loader.py              # Carregamento cacheado (st.cache_data) de todos os Parquets
 │   └── data_pipeline/                      # Pipeline de ingestão e transformação (PySpark)
-│       ├── ingest_all.py                   # Script mestre unificado (todos os anos)
+│       ├── ingest_all.py                   # Orquestrador mestre/dispatcher do pipeline completo via subprocessos
 │       ├── downloader.py                   # Download e indexação sequencial dos CSVs do INEP
 │       ├── parser.py                       # Leitura e padronização dos CSVs brutos
 │       ├── clean.py                        # Limpeza e tratamento de nulos
@@ -137,18 +139,26 @@ pip install -r requirements.txt
 
 ## Guia de Execução
 
-### Etapa 1 — Executar o Pipeline de Dados
+### Etapa 1 — Executar o Pipeline Completo
 
 Antes de iniciar o dashboard, certifique-se de que os dados brutos estão em `data/raw/` com a nomenclatura correta (ex: `MICRODADOS_ENEM_2021.csv`, `PARTICIPANTES_2024.csv`, `RESULTADOS_2024.csv`).
 
-Para processar toda a série histórica (2021–2025):
+Todo o pipeline plurianual (2021–2025) é executado de ponta a ponta por um único comando centralizado. O orquestrador processa sequencialmente:
+
+1. a ingestão e limpeza, cobrindo os anos legados de 2021–2023 e a unificação dos arquivos fragmentados de 2024–2025;
+2. a transformação e geração das agregações em `transform.py`;
+3. a geração do relatório e dos artefatos de Machine Learning em `report_or_ml.py`.
+
+Cada subprocesso precisa retornar com sucesso antes que a próxima fase seja iniciada. Em caso de falha, o orquestrador encerra o fluxo com uma mensagem crítica `[NOK]`; ao final, informa o status completo `[OK]`.
+
+Para executar:
 
 ```bash
 # Com o ambiente virtual ativado:
 python3 src/data_pipeline/ingest_all.py
 ```
 
-Os arquivos agregados Parquet serão gerados em `data/processed/`.
+O uso de fases isoladas e subprocessos controlados permite liberar recursos entre as etapas e reduzir o risco de estouro de RAM. Os arquivos agregados Parquet e os insights de ML serão gerados em `data/processed/`.
 
 ### Etapa 2 — Iniciar o Dashboard
 

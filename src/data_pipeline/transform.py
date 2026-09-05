@@ -10,13 +10,13 @@ if __name__ == "__main__":
 
     spark = SparkSession.builder \
         .appName("ENEM_Plurianual_Transform") \
-        .config("spark.driver.memory", "4g") \
-        .config("spark.executor.memory", "4g") \
-        .config("spark.driver.maxResultSize", "2g") \
-        .config("spark.sql.shuffle.partitions", "32") \
+        .config("spark.driver.memory", "2g") \
+        .config("spark.executor.memory", "2g") \
+        .config("spark.driver.maxResultSize", "1g") \
+        .config("spark.sql.shuffle.partitions", "16") \
         .config("spark.sql.adaptive.enabled", "true") \
-        .config("spark.memory.fraction", "0.6") \
-        .config("spark.memory.storageFraction", "0.3") \
+        .config("spark.memory.fraction", "0.4") \
+        .config("spark.memory.storageFraction", "0.2") \
         .config("spark.local.dir", "data/tmp_spill") \
         .getOrCreate()
 
