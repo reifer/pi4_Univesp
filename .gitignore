@@ -5,5 +5,3 @@ __pycache__/
 data/processed/*_cleaned_parquet/
 data/processed/*_enriched_parquet/
 data/tmp_spill/
-data/processed/
-data/
