@@ -1,3 +1,11 @@
+import sys
+from pathlib import Path
+
+# Adiciona o diretório atual (src/app) ao sys.path para garantir importações absolutas consistentes no Streamlit Cloud
+current_dir = Path(__file__).resolve().parent
+if str(current_dir) not in sys.path:
+    sys.path.append(str(current_dir))
+
 import pandas as pd
 import streamlit as st
 from config.settings import COLOR_MAP_REDE, apply_custom_css
