@@ -3,17 +3,14 @@ import plotly.express as px
 import pandas as pd
 
 def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, df_socio_escola, COLOR_MAP_REDE):
-    """Renderiza o módulo de Redes de Ensino e Análise Plurianual com design fluido e responsivo."""
+    """Renderiza o módulo de Redes de Ensino e Análise Plurianual com containers nativos responsivos."""
     
-    # Cabeçalho encapsulado em Clean Card
-    st.markdown(f"""
-    <div class="clean-card">
-        <h3 style="margin-top: 0; color: #0F172A; font-size: 1.4rem;">🏫 Granularidade e Desempenho por Rede de Ensino — ENEM {selected_year} & Plurianual</h3>
-        <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 0;">
-        Análise detalhada baseada no campo oficial <code>TP_DEPENDENCIA_ADM_ESC</code> (1 = Federal, 2 = Estadual, 3 = Municipal, 4 = Privada), permitindo avaliar a volumetria, as disparidades de desempenho e a evolução temporal das escolas públicas versus rede privada.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(f"### 🏫 Granularidade e Desempenho por Rede de Ensino — ENEM {selected_year} & Plurianual")
+        st.markdown(
+            "Análise detalhada baseada no campo oficial **`TP_DEPENDENCIA_ADM_ESC`** (1 = Federal, 2 = Estadual, 3 = Municipal, 4 = Privada), "
+            "permitindo avaliar a volumetria, as disparidades de desempenho e a evolução temporal das escolas públicas versus rede privada."
+        )
 
     if df_rede.empty:
         st.warning(
@@ -67,137 +64,108 @@ def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, d
     top_red_rede = redes_identificadas.loc[redes_identificadas["media_redacao"].idxmax()] if not redes_identificadas.empty else None
 
     with k1:
-        st.markdown(f"""
-        <div class="clean-card" style="text-align: center; padding: 14px;">
-            <div class="metric-label-clean">Alunos Rede Pública</div>
-            <div class="metric-value-clean" style="font-size: 1.3rem;">{cand_publica:,.0f}</div>
-            <div class="metric-sub-clean">{(cand_publica/total_geral_rede*100):.1f}% do total</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.metric("Alunos Rede Pública", f"{cand_publica:,.0f}", f"{(cand_publica/total_geral_rede*100):.1f}% do total")
     with k2:
-        st.markdown(f"""
-        <div class="clean-card" style="text-align: center; padding: 14px;">
-            <div class="metric-label-clean">Alunos Rede Privada</div>
-            <div class="metric-value-clean" style="font-size: 1.3rem;">{cand_privada:,.0f}</div>
-            <div class="metric-sub-clean">{(cand_privada/total_geral_rede*100):.1f}% do total</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.metric("Alunos Rede Privada", f"{cand_privada:,.0f}", f"{(cand_privada/total_geral_rede*100):.1f}% do total")
     with k3:
         val_mt = f"{top_mt_rede['media_mt']:.1f}" if top_mt_rede is not None else "N/A"
         nome_mt = top_mt_rede['TP_DEPENDENCIA_ADM_ESC_DESC'] if top_mt_rede is not None else "-"
-        st.markdown(f"""
-        <div class="clean-card" style="text-align: center; padding: 14px;">
-            <div class="metric-label-clean">Maior Média Matemática</div>
-            <div class="metric-value-clean" style="font-size: 1.3rem;">{val_mt}</div>
-            <div class="metric-sub-clean">Líder: {nome_mt}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.metric("Maior Média Matemática", val_mt, f"Líder: {nome_mt}")
     with k4:
         val_red = f"{top_red_rede['media_redacao']:.1f}" if top_red_rede is not None else "N/A"
         nome_red = top_red_rede['TP_DEPENDENCIA_ADM_ESC_DESC'] if top_red_rede is not None else "-"
-        st.markdown(f"""
-        <div class="clean-card" style="text-align: center; padding: 14px;">
-            <div class="metric-label-clean">Maior Média Redação</div>
-            <div class="metric-value-clean" style="font-size: 1.3rem;">{val_red}</div>
-            <div class="metric-sub-clean">Líder: {nome_red}</div>
-        </div>
-        """, unsafe_allow_html=True)
+        with st.container(border=True):
+            st.metric("Maior Média Redação", val_red, f"Líder: {nome_red}")
 
     st.markdown("---")
     st.markdown("#### 1️⃣ Volumetria de Alunos por Dependência Administrativa")
     col_v1, col_v2 = st.columns(2)
     
     with col_v1:
-        st.markdown("""
-        <div class="clean-card">
-            <h5 style="margin-top: 0; color: #0F172A; font-size: 1.05rem;">Total Absoluto de Inscritos</h5>
-        """, unsafe_allow_html=True)
-        fig_vol = px.bar(
-            redes_identificadas,
-            x="TP_DEPENDENCIA_ADM_ESC_DESC",
-            y="total_candidatos",
-            color="TP_DEPENDENCIA_ADM_ESC_DESC",
-            color_discrete_map=COLOR_MAP_REDE,
-            text_auto=".2s",
-            labels={"TP_DEPENDENCIA_ADM_ESC_DESC": "Rede de Ensino", "total_candidatos": "Total de Candidatos"}
-        )
-        fig_vol.update_layout(
-            template="plotly_white", 
-            paper_bgcolor="rgba(0,0,0,0)", 
-            plot_bgcolor="rgba(0,0,0,0)", 
-            height=350, 
-            margin=dict(l=10, r=10, t=30, b=10),
-            showlegend=False
-        )
-        st.plotly_chart(fig_vol, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("##### Total Absoluto de Inscritos")
+            fig_vol = px.bar(
+                redes_identificadas,
+                x="TP_DEPENDENCIA_ADM_ESC_DESC",
+                y="total_candidatos",
+                color="TP_DEPENDENCIA_ADM_ESC_DESC",
+                color_discrete_map=COLOR_MAP_REDE,
+                text_auto=".2s",
+                labels={"TP_DEPENDENCIA_ADM_ESC_DESC": "Rede de Ensino", "total_candidatos": "Total de Candidatos"}
+            )
+            fig_vol.update_layout(
+                template="plotly_white", 
+                paper_bgcolor="rgba(0,0,0,0)", 
+                plot_bgcolor="rgba(0,0,0,0)", 
+                height=350, 
+                margin=dict(l=10, r=10, t=30, b=10),
+                showlegend=False
+            )
+            st.plotly_chart(fig_vol, use_container_width=True)
 
     with col_v2:
-        st.markdown("""
-        <div class="clean-card">
-            <h5 style="margin-top: 0; color: #0F172A; font-size: 1.05rem;">Proporção / Participação (%)</h5>
-        """, unsafe_allow_html=True)
-        fig_donut = px.pie(
-            redes_identificadas,
-            names="TP_DEPENDENCIA_ADM_ESC_DESC",
-            values="total_candidatos",
-            hole=0.5,
-            color="TP_DEPENDENCIA_ADM_ESC_DESC",
-            color_discrete_map=COLOR_MAP_REDE
-        )
-        fig_donut.update_layout(
-            template="plotly_white", 
-            paper_bgcolor="rgba(0,0,0,0)", 
-            plot_bgcolor="rgba(0,0,0,0)", 
-            height=350,
-            margin=dict(l=10, r=10, t=30, b=10),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
-        )
-        st.plotly_chart(fig_donut, use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+        with st.container(border=True):
+            st.markdown("##### Proporção / Participação (%)")
+            fig_donut = px.pie(
+                redes_identificadas,
+                names="TP_DEPENDENCIA_ADM_ESC_DESC",
+                values="total_candidatos",
+                hole=0.5,
+                color="TP_DEPENDENCIA_ADM_ESC_DESC",
+                color_discrete_map=COLOR_MAP_REDE
+            )
+            fig_donut.update_layout(
+                template="plotly_white", 
+                paper_bgcolor="rgba(0,0,0,0)", 
+                plot_bgcolor="rgba(0,0,0,0)", 
+                height=350,
+                margin=dict(l=10, r=10, t=30, b=10),
+                legend=dict(orientation="h", yanchor="bottom", y=-0.2, xanchor="center", x=0.5)
+            )
+            st.plotly_chart(fig_donut, use_container_width=True)
 
     st.markdown("---")
-    st.markdown("""
-    <div class="clean-card">
-        <h4 style="margin-top: 0; color: #0F172A; font-size: 1.15rem;">2️⃣ Comparativo Multidisciplinar de Desempenho (Barras Agrupadas)</h4>
-    """, unsafe_allow_html=True)
-    
-    _nota_cols = [c for c in ["media_cn", "media_ch", "media_lc", "media_mt", "media_redacao"] if c in redes_identificadas.columns]
-    melted_notas = redes_identificadas.melt(
-        id_vars=["TP_DEPENDENCIA_ADM_ESC_DESC"],
-        value_vars=_nota_cols,
-        var_name="Area_Conhecimento",
-        value_name="Nota_Media"
-    )
-    area_names = {
-        "media_cn": "Ciências da Natureza",
-        "media_ch": "Ciências Humanas",
-        "media_lc": "Linguagens e Códigos",
-        "media_mt": "Matemática",
-        "media_redacao": "Redação"
-    }
-    melted_notas["Area_Desc"] = melted_notas["Area_Conhecimento"].map(area_names)
+    with st.container(border=True):
+        st.markdown("#### 2️⃣ Comparativo Multidisciplinar de Desempenho (Barras Agrupadas)")
+        
+        _nota_cols = [c for c in ["media_cn", "media_ch", "media_lc", "media_mt", "media_redacao"] if c in redes_identificadas.columns]
+        melted_notas = redes_identificadas.melt(
+            id_vars=["TP_DEPENDENCIA_ADM_ESC_DESC"],
+            value_vars=_nota_cols,
+            var_name="Area_Conhecimento",
+            value_name="Nota_Media"
+        )
+        area_names = {
+            "media_cn": "Ciências da Natureza",
+            "media_ch": "Ciências Humanas",
+            "media_lc": "Linguagens e Códigos",
+            "media_mt": "Matemática",
+            "media_redacao": "Redação"
+        }
+        melted_notas["Area_Desc"] = melted_notas["Area_Conhecimento"].map(area_names)
 
-    fig_grouped_bar = px.bar(
-        melted_notas,
-        x="Area_Desc",
-        y="Nota_Media",
-        color="TP_DEPENDENCIA_ADM_ESC_DESC",
-        barmode="group",
-        color_discrete_map=COLOR_MAP_REDE,
-        text_auto=".1f",
-        labels={"Area_Desc": "Área de Conhecimento", "Nota_Media": "Nota Média (TRI)", "TP_DEPENDENCIA_ADM_ESC_DESC": "Dependência Administrativa"}
-    )
-    fig_grouped_bar.update_layout(
-        template="plotly_white",
-        paper_bgcolor="rgba(0,0,0,0)",
-        plot_bgcolor="rgba(0,0,0,0)",
-        height=420,
-        margin=dict(l=10, r=10, t=30, b=10),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
-    )
-    st.plotly_chart(fig_grouped_bar, use_container_width=True)
-    st.markdown("</div>", unsafe_allow_html=True)
+        fig_grouped_bar = px.bar(
+            melted_notas,
+            x="Area_Desc",
+            y="Nota_Media",
+            color="TP_DEPENDENCIA_ADM_ESC_DESC",
+            barmode="group",
+            color_discrete_map=COLOR_MAP_REDE,
+            text_auto=".1f",
+            labels={"Area_Desc": "Área de Conhecimento", "Nota_Media": "Nota Média (TRI)", "TP_DEPENDENCIA_ADM_ESC_DESC": "Dependência Administrativa"}
+        )
+        fig_grouped_bar.update_layout(
+            template="plotly_white",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            height=420,
+            margin=dict(l=10, r=10, t=30, b=10),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig_grouped_bar, use_container_width=True)
 
     st.markdown("---")
     st.markdown("#### 3️⃣ Evolução Histórica Plurianual por Rede de Ensino")
@@ -227,101 +195,91 @@ def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, d
 
             col_line1, col_line2 = st.columns(2)
             with col_line1:
-                st.markdown("""
-                <div class="clean-card">
-                """, unsafe_allow_html=True)
-                metric_to_plot = st.selectbox(
-                    "Selecione a Métrica para Série Temporal:",
-                    options=["media_mt", "media_redacao", "media_geral", "media_cn", "media_ch", "media_lc"],
-                    format_func=lambda x: {
-                        "media_mt": "Matemática",
-                        "media_redacao": "Redação",
-                        "media_geral": "Média Geral",
-                        "media_cn": "Ciências da Natureza",
-                        "media_ch": "Ciências Humanas",
-                        "media_lc": "Linguagens e Códigos"
-                    }[x]
-                )
-                fig_line_notas = px.line(
-                    pluri_summary,
-                    x="NU_ANO",
-                    y=metric_to_plot,
-                    color="TP_DEPENDENCIA_ADM_ESC_DESC",
-                    markers=True,
-                    color_discrete_map=COLOR_MAP_REDE,
-                    title=f"Evolução das Notas ({metric_to_plot})",
-                    labels={"NU_ANO": "Ano do Exame", metric_to_plot: "Nota Média", "TP_DEPENDENCIA_ADM_ESC_DESC": "Rede"}
-                )
-                fig_line_notas.update_layout(
-                    template="plotly_white", 
-                    paper_bgcolor="rgba(0,0,0,0)", 
-                    plot_bgcolor="rgba(0,0,0,0)", 
-                    height=380,
-                    margin=dict(l=10, r=10, t=30, b=10)
-                )
-                st.plotly_chart(fig_line_notas, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    metric_to_plot = st.selectbox(
+                        "Selecione a Métrica para Série Temporal:",
+                        options=["media_mt", "media_redacao", "media_geral", "media_cn", "media_ch", "media_lc"],
+                        format_func=lambda x: {
+                            "media_mt": "Matemática",
+                            "media_redacao": "Redação",
+                            "media_geral": "Média Geral",
+                            "media_cn": "Ciências da Natureza",
+                            "media_ch": "Ciências Humanas",
+                            "media_lc": "Linguagens e Códigos"
+                        }[x]
+                    )
+                    fig_line_notas = px.line(
+                        pluri_summary,
+                        x="NU_ANO",
+                        y=metric_to_plot,
+                        color="TP_DEPENDENCIA_ADM_ESC_DESC",
+                        markers=True,
+                        color_discrete_map=COLOR_MAP_REDE,
+                        title=f"Evolução das Notas ({metric_to_plot})",
+                        labels={"NU_ANO": "Ano do Exame", metric_to_plot: "Nota Média", "TP_DEPENDENCIA_ADM_ESC_DESC": "Rede"}
+                    )
+                    fig_line_notas.update_layout(
+                        template="plotly_white", 
+                        paper_bgcolor="rgba(0,0,0,0)", 
+                        plot_bgcolor="rgba(0,0,0,0)", 
+                        height=380,
+                        margin=dict(l=10, r=10, t=30, b=10)
+                    )
+                    st.plotly_chart(fig_line_notas, use_container_width=True)
 
             with col_line2:
-                st.markdown("""
-                <div class="clean-card">
-                    <h5 style="margin-top: 0; color: #0F172A; font-size: 1.05rem;">Evolução de Inscritos</h5>
-                """, unsafe_allow_html=True)
-                fig_line_vol = px.line(
-                    pluri_summary,
-                    x="NU_ANO",
-                    y="total_candidatos",
-                    color="TP_DEPENDENCIA_ADM_ESC_DESC",
-                    markers=True,
-                    color_discrete_map=COLOR_MAP_REDE,
-                    title="Evolução de Inscritos por Rede",
-                    labels={"NU_ANO": "Ano do Exame", "total_candidatos": "Total de Candidatos", "TP_DEPENDENCIA_ADM_ESC_DESC": "Rede"}
-                )
-                fig_line_vol.update_layout(
-                    template="plotly_white", 
-                    paper_bgcolor="rgba(0,0,0,0)", 
-                    plot_bgcolor="rgba(0,0,0,0)", 
-                    height=380,
-                    margin=dict(l=10, r=10, t=30, b=10)
-                )
-                st.plotly_chart(fig_line_vol, use_container_width=True)
-                st.markdown("</div>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.markdown("##### Evolução de Inscritos")
+                    fig_line_vol = px.line(
+                        pluri_summary,
+                        x="NU_ANO",
+                        y="total_candidatos",
+                        color="TP_DEPENDENCIA_ADM_ESC_DESC",
+                        markers=True,
+                        color_discrete_map=COLOR_MAP_REDE,
+                        title="Evolução de Inscritos por Rede",
+                        labels={"NU_ANO": "Ano do Exame", "total_candidatos": "Total de Candidatos", "TP_DEPENDENCIA_ADM_ESC_DESC": "Rede"}
+                    )
+                    fig_line_vol.update_layout(
+                        template="plotly_white", 
+                        paper_bgcolor="rgba(0,0,0,0)", 
+                        plot_bgcolor="rgba(0,0,0,0)", 
+                        height=380,
+                        margin=dict(l=10, r=10, t=30, b=10)
+                    )
+                    st.plotly_chart(fig_line_vol, use_container_width=True)
 
     st.markdown("---")
-    st.markdown("""
-    <div class="clean-card">
-        <h4 style="margin-top: 0; color: #0F172A; font-size: 1.15rem;">4️⃣ 🔬 Raio-X Avançado: Impacto Socioeconômico na Escola (<code>Q006</code> x <code>Q007</code> x Rede)</h4>
-    """, unsafe_allow_html=True)
-    
-    if not df_socio_escola.empty:
-        opcoes_redes = [r for r in df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique() if r != "Não Informado"]
-        if not opcoes_redes:
-            opcoes_redes = df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique()
-
-        selected_rede_filter = st.selectbox(
-            "Filtrar por Dependência Administrativa da Escola:",
-            options=opcoes_redes
-        )
-        df_filtered_socio = df_socio_escola[df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"] == selected_rede_filter]
+    with st.container(border=True):
+        st.markdown("#### 4️⃣ 🔬 Raio-X Avançado: Impacto Socioeconômico na Escola (`Q006` x `Q007` x Rede)")
         
-        fig_socio = px.scatter(
-            df_filtered_socio,
-            x="Q006_DESC",
-            y="media_matematica",
-            size="total_candidatos",
-            color="Q007_DESC",
-            hover_name="Q006_DESC",
-            title=f"Desempenho em Matemática vs Renda Familiar ({selected_rede_filter})",
-            labels={"Q006_DESC": "Faixa de Renda", "media_matematica": "Média Matemática", "Q007_DESC": "Trabalho (Q007)"}
-        )
-        fig_socio.update_layout(
-            template="plotly_white", 
-            paper_bgcolor="rgba(0,0,0,0)", 
-            plot_bgcolor="rgba(0,0,0,0)", 
-            height=420,
-            margin=dict(l=10, r=10, t=30, b=20)
-        )
-        fig_socio.update_xaxes(tickangle=45)
-        st.plotly_chart(fig_socio, use_container_width=True)
-    
-    st.markdown("</div>", unsafe_allow_html=True)
+        if not df_socio_escola.empty:
+            opcoes_redes = [r for r in df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique() if r != "Não Informado"]
+            if not opcoes_redes:
+                opcoes_redes = df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique()
+
+            selected_rede_filter = st.selectbox(
+                "Filtrar por Dependência Administrativa da Escola:",
+                options=opcoes_redes
+            )
+            df_filtered_socio = df_socio_escola[df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"] == selected_rede_filter]
+            
+            fig_socio = px.scatter(
+                df_filtered_socio,
+                x="Q006_DESC",
+                y="media_matematica",
+                size="total_candidatos",
+                color="Q007_DESC",
+                hover_name="Q006_DESC",
+                title=f"Desempenho em Matemática vs Renda Familiar ({selected_rede_filter})",
+                labels={"Q006_DESC": "Faixa de Renda", "media_matematica": "Média Matemática", "Q007_DESC": "Trabalho (Q007)"}
+            )
+            fig_socio.update_layout(
+                template="plotly_white", 
+                paper_bgcolor="rgba(0,0,0,0)", 
+                plot_bgcolor="rgba(0,0,0,0)", 
+                height=420,
+                margin=dict(l=10, r=10, t=30, b=20)
+            )
+            fig_socio.update_xaxes(tickangle=45)
+            st.plotly_chart(fig_socio, use_container_width=True)

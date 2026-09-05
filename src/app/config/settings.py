@@ -11,7 +11,7 @@ COLOR_MAP_REDE = {
 }
 
 def apply_custom_css():
-    """Aplica a estilização CSS personalizada e responsiva do dashboard."""
+    """Aplica a estilização CSS personalizada e responsiva do dashboard (com compatibilidade para containers nativos)."""
     st.markdown("""
     <style>
         .stApp, .main, .block-container {
@@ -57,14 +57,15 @@ def apply_custom_css():
             color: #FFFFFF !important;
             font-weight: 600 !important;
         }
-        .clean-card {
+        
+        /* Ajuste de compatibilidade para os st.container(border=True) nativos */
+        div[data-testid="stVerticalBlock"] div[data-testid="stVerticalBlockBorderWrapper"] {
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
             border-radius: 12px;
-            padding: 18px 20px;
-            margin-bottom: 16px;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
         }
+
         .badge-primary {
             background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
             color: #ffffff;
@@ -101,9 +102,8 @@ def apply_custom_css():
                 padding-left: 1rem;
                 padding-right: 1rem;
             }
-            .clean-card {
-                padding: 14px;
-                margin-bottom: 12px;
+            div[data-testid="stVerticalBlock"] div[data-testid="stVerticalBlockBorderWrapper"] {
+                padding: 4px;
             }
             .metric-value-clean {
                 font-size: 1.5rem;

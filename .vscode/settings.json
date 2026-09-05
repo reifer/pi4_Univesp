@@ -66,5 +66,15 @@
     "**/.ruff_cache": true,
     "**/_pyfrely_virtual_*": true
   },
-  "python.defaultInterpreterPath": "/home/reifer/Documentos/Projetos Software/Faculdade/PI4/my-data-project/.venv/bin/python"
+  "python.defaultInterpreterPath": "/home/reifer/Documentos/Projetos Software/Faculdade/PI4/my-data-project/.venv/bin/python",
+  "terminal.integrated.profiles.linux": {
+    "bash": {
+      "path": "bash",
+      "args": [
+        "-c",
+        "if [ -d .venv ]; then source .venv/bin/activate; elif [ -d venv ]; then source venv/bin/activate; fi; exec bash"
+      ]
+    }
+  },
+  "terminal.integrated.defaultProfile.linux": "bash"
 }
