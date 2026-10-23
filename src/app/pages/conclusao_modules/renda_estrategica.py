@@ -47,19 +47,96 @@ def render():
             df_pluri_renda = pd.concat(dfs_pluri, ignore_index=True)
             
             if "RENDA_FAMILIAR_DESC" in df_pluri_renda.columns and "NU_ANO" in df_pluri_renda.columns:
-                with st.container(border=True):
-                    fig_hist = px.line(
-                        df_pluri_renda, x="NU_ANO", y="media_geral" if "media_geral" in df_pluri_renda.columns else "total_candidatos",
-                        color="RENDA_FAMILIAR_DESC", markers=True,
-                        title="Evolução Plurianual do Desempenho por Faixa de Renda",
-                        labels={"NU_ANO": "Ano do Exame", "media_geral": "Média Geral TRI"}
-                    )
-                    fig_hist.update_layout(
-                        template="plotly_white", 
-                        height=420,
-                        margin=dict(l=20, r=20, t=50, b=20)
-                    )
-                    st.plotly_chart(fig_hist, use_container_width=True)
+                tem_codigo_renda = "RENDA_FAMILIAR_COD" in df_pluri_renda.columns
+                coluna_faixa = "RENDA_FAMILIAR_COD" if tem_codigo_renda else "RENDA_FAMILIAR_DESC"
+                df_pluri_renda[coluna_faixa] = df_pluri_renda[coluna_faixa].astype("string")
+                opcoes_faixas = sorted(df_pluri_renda[coluna_faixa].dropna().unique().tolist())
+                rotulos_faixas = (
+                    df_pluri_renda.sort_values("NU_ANO", ascending=False)
+                    .drop_duplicates(coluna_faixa)
+                    .set_index(coluna_faixa)["RENDA_FAMILIAR_DESC"]
+                    .astype(str)
+                    .to_dict()
+                )
+                indices_iniciais = (
+                    sorted({0, len(opcoes_faixas) // 2, len(opcoes_faixas) - 1})
+                    if opcoes_faixas
+                    else []
+                )
+                faixas_iniciais = [opcoes_faixas[indice] for indice in indices_iniciais]
+                faixas_selecionadas = st.multiselect(
+                    "Faixas de renda para comparar:",
+                    options=opcoes_faixas,
+                    default=faixas_iniciais,
+                    format_func=lambda faixa: rotulos_faixas.get(faixa, faixa),
+                    help="As opções iniciais mostram faixas baixa, intermediária e alta. Selecione poucas faixas para manter o gráfico legível no celular.",
+                    key="fase2_faixas_renda_plurianual",
+                )
+
+                if faixas_selecionadas:
+                    df_grafico_renda = df_pluri_renda[
+                        df_pluri_renda[coluna_faixa].isin(faixas_selecionadas)
+                    ].copy()
+                    chaves_agrupamento = ["NU_ANO", coluna_faixa]
+                    agregacoes: dict[str, tuple[str, str]] = {}
+                    if "total_candidatos" in df_grafico_renda.columns:
+                        agregacoes["total_candidatos"] = ("total_candidatos", "sum")
+                    if "media_geral" in df_grafico_renda.columns:
+                        if "total_candidatos" in df_grafico_renda.columns:
+                            df_grafico_renda["_media_ponderada"] = (
+                                df_grafico_renda["media_geral"] * df_grafico_renda["total_candidatos"]
+                            )
+                            agregacoes["_media_ponderada"] = ("_media_ponderada", "sum")
+                        else:
+                            agregacoes["media_geral"] = ("media_geral", "mean")
+
+                    if agregacoes:
+                        df_grafico_renda = (
+                            df_grafico_renda.groupby(chaves_agrupamento, as_index=False)
+                            .agg(**agregacoes)
+                        )
+                        if "_media_ponderada" in df_grafico_renda.columns:
+                            df_grafico_renda["media_geral"] = (
+                                df_grafico_renda["_media_ponderada"]
+                                .div(df_grafico_renda["total_candidatos"])
+                                .where(df_grafico_renda["total_candidatos"] != 0)
+                            )
+                            df_grafico_renda = df_grafico_renda.drop(columns="_media_ponderada")
+
+                    metrica_pluri = "media_geral" if "media_geral" in df_grafico_renda.columns else "total_candidatos"
+                    rotulo_metrica_pluri = "Média Geral TRI" if metrica_pluri == "media_geral" else "Total de Candidatos"
+                    df_grafico_renda["Faixa de Renda"] = df_grafico_renda[coluna_faixa].map(rotulos_faixas)
+                    with st.container(border=True):
+                        fig_hist = px.line(
+                            df_grafico_renda,
+                            x="NU_ANO",
+                            y=metrica_pluri,
+                            color="Faixa de Renda",
+                            markers=True,
+                            title="Evolução Plurianual do Desempenho por Faixa de Renda",
+                            labels={
+                                "NU_ANO": "Ano do Exame",
+                                metrica_pluri: rotulo_metrica_pluri,
+                                "Faixa de Renda": "Faixa de Renda Familiar",
+                            },
+                            hover_data={coluna_faixa: True},
+                        )
+                        fig_hist.update_layout(
+                            template="plotly_white",
+                            height=400,
+                            margin=dict(l=20, r=15, t=60, b=100),
+                            legend=dict(
+                                orientation="h",
+                                y=-0.22,
+                                x=0.5,
+                                xanchor="center",
+                                yanchor="top",
+                                font=dict(size=9),
+                            ),
+                        )
+                        st.plotly_chart(fig_hist, width="stretch")
+                else:
+                    st.info("Selecione ao menos uma faixa de renda para exibir a comparação.")
     else:
         df_renda_ano = carregar_dados_renda(ano_f2)
         if not df_renda_ano.empty:

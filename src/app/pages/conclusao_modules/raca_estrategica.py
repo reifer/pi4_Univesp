@@ -83,18 +83,27 @@ def render():
                 with st.container(border=True):
                     fig_raca_pluri = px.bar(
                         df_agrupado,
-                        x="MACRO_RENDA", y="media_mt", color="TP_COR_RACA_DESC", barmode="group",
+                        x="media_mt", y="MACRO_RENDA", color="TP_COR_RACA_DESC", barmode="group",
+                        orientation="h",
                         title="Média Plurianual de Matemática por Bloco Macro de Renda e Raça/Cor",
                         labels={"MACRO_RENDA": "Bloco Macro de Renda Familiar", "media_mt": "Nota Média Matemática", "TP_COR_RACA_DESC": "Raça / Cor"}
                     )
                     fig_raca_pluri.update_layout(
                         template="plotly_white", 
-                        height=450, 
-                        margin=dict(l=20, r=20, t=50, b=20),
-                        xaxis=dict(tickangle=-15, tickfont=dict(size=11), automargin=True),
-                        legend_title="Raça / Cor"
+                        height=500,
+                        margin=dict(l=20, r=15, t=60, b=130),
+                        yaxis=dict(tickfont=dict(size=10), automargin=True),
+                        legend=dict(
+                            title_text="Raça / Cor",
+                            orientation="h",
+                            y=-0.22,
+                            x=0.5,
+                            xanchor="center",
+                            yanchor="top",
+                            font=dict(size=9),
+                        ),
                     )
-                    st.plotly_chart(fig_raca_pluri, use_container_width=True)
+                    st.plotly_chart(fig_raca_pluri, width="stretch")
     else:
         df_raca_ano = carregar_dados_renda_raca(ano_f3_raca)
         if not df_raca_ano.empty:

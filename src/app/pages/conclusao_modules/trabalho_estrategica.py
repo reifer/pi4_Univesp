@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import plotly.express as px
+import textwrap
 
 def render():
     st.markdown("---")
@@ -46,19 +47,89 @@ def render():
         if dfs_pluri_f4:
             df_pluri_socio = pd.concat(dfs_pluri_f4, ignore_index=True)
             if "Q007_DESC" in df_pluri_socio.columns and "media_matematica" in df_pluri_socio.columns:
+                df_pluri_socio["Q007_DESC"] = (
+                    df_pluri_socio["Q007_DESC"]
+                    .astype("string")
+                    .str.strip()
+                    .str.rstrip(".")
+                    .str.strip()
+                    .str.replace(r"\s+", " ", regex=True)
+                )
+                df_pluri_socio = df_pluri_socio.dropna(subset=["Q007_DESC", "NU_ANO", "media_matematica"])
+                df_pluri_socio["_condicao_chave"] = df_pluri_socio["Q007_DESC"].str.casefold()
+                rotulos_condicoes = (
+                    df_pluri_socio.drop_duplicates("_condicao_chave")
+                    .set_index("_condicao_chave")["Q007_DESC"]
+                    .to_dict()
+                )
+                anos_disponiveis = sorted(df_pluri_socio["NU_ANO"].astype(int).unique().tolist())
+                ano_trabalho = st.selectbox(
+                    "Ano para comparar as condições de trabalho:",
+                    options=anos_disponiveis,
+                    index=len(anos_disponiveis) - 1,
+                    key="fase4_ano_trabalho_plurianual",
+                )
+                df_ano_trabalho = df_pluri_socio[
+                    df_pluri_socio["NU_ANO"].astype(int) == ano_trabalho
+                ].copy()
+
+                if "total_candidatos" in df_ano_trabalho.columns:
+                    df_ano_trabalho["_nota_ponderada"] = (
+                        df_ano_trabalho["media_matematica"] * df_ano_trabalho["total_candidatos"]
+                    )
+                    df_trabalho_agrupado = (
+                        df_ano_trabalho.groupby("_condicao_chave", as_index=False)
+                        .agg(
+                            total_candidatos=("total_candidatos", "sum"),
+                            nota_ponderada=("_nota_ponderada", "sum"),
+                        )
+                    )
+                    df_trabalho_agrupado["media_matematica"] = (
+                        df_trabalho_agrupado["nota_ponderada"]
+                        / df_trabalho_agrupado["total_candidatos"]
+                    )
+                else:
+                    df_trabalho_agrupado = (
+                        df_ano_trabalho.groupby("_condicao_chave", as_index=False)
+                        .agg(media_matematica=("media_matematica", "mean"))
+                    )
+
+                df_trabalho_agrupado["Condição de Trabalho"] = df_trabalho_agrupado[
+                    "_condicao_chave"
+                ].map(rotulos_condicoes)
+                df_trabalho_agrupado["Condição de Trabalho (completa)"] = (
+                    df_trabalho_agrupado["Condição de Trabalho"]
+                )
+                df_trabalho_agrupado["Condição de Trabalho"] = (
+                    df_trabalho_agrupado["Condição de Trabalho"]
+                    .map(lambda descricao: "<br>".join(textwrap.wrap(descricao, width=24)))
+                )
                 with st.container(border=True):
-                    fig_f4_hist = px.box(
-                        df_pluri_socio, x="Q007_DESC", y="media_matematica", color="NU_ANO",
-                        title="Distribuição Plurianual da Nota de Matemática por Condição de Trabalho (Q007)",
-                        labels={"Q007_DESC": "Condição de Trabalho", "media_matematica": "Média Matemática (TRI)"}
+                    fig_f4_hist = px.bar(
+                        df_trabalho_agrupado,
+                        x="media_matematica",
+                        y="Condição de Trabalho",
+                        orientation="h",
+                        title=f"Média Ponderada de Matemática por Condição de Trabalho — ENEM {ano_trabalho}",
+                        labels={
+                            "Condição de Trabalho": "Condição de Trabalho",
+                            "media_matematica": "Média Matemática (TRI)",
+                        },
+                        hover_data={
+                            "Condição de Trabalho (completa)": True,
+                            "total_candidatos": True,
+                        }
+                        if "total_candidatos" in df_trabalho_agrupado.columns
+                        else {"Condição de Trabalho (completa)": True},
                     )
                     fig_f4_hist.update_layout(
-                        template="plotly_white", 
-                        height=420,
-                        margin=dict(l=20, r=20, t=50, b=20),
-                        xaxis=dict(tickangle=-30, tickfont=dict(size=10), automargin=True)
+                        template="plotly_white",
+                        height=max(360, 100 + 55 * len(df_trabalho_agrupado)),
+                        margin=dict(l=15, r=15, t=60, b=30),
+                        showlegend=False,
+                        yaxis=dict(tickfont=dict(size=10), automargin=True),
                     )
-                    st.plotly_chart(fig_f4_hist, use_container_width=True)
+                    st.plotly_chart(fig_f4_hist, width="stretch")
     else:
         df_socio_ano = carregar_dados_socio_escola(ano_f4)
         if not df_socio_ano.empty:
