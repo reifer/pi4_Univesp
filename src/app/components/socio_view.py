@@ -2,26 +2,50 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 
-def render_socio_view(df_notas_renda, selected_treineiro_labels, selected_treineiro_values, filtered_df):
+from app.utils.data_loader import filter_aggregate_frame
+
+
+def _income_sort_key(value):
+    value = str(value)
+    if value.isdigit():
+        return (0, int(value))
+    return (1, value)
+
+
+def render_socio_view(
+    df_notas_renda,
+    selected_treineiro_labels,
+    selected_treineiro_values,
+    filtered_df,
+    selected_years=None,
+    selected_ufs=None,
+):
     """Renderiza o módulo de Perfil Socioeconômico (Renda Familiar) com containers nativos responsivos."""
+    selected_years = selected_years or sorted(df_notas_renda["NU_ANO"].unique().tolist())
+    selected_ufs = selected_ufs or sorted(df_notas_renda["SG_UF_PROVA"].unique().tolist())
     
     with st.container(border=True):
         st.markdown("### 💰 Distribuição por Faixa de Renda Familiar")
     
     if not df_notas_renda.empty:
         with st.container(border=True):
-            df_renda_filt = df_notas_renda.copy()
-            if "IN_TREINEIRO_DESC" in df_renda_filt.columns:
-                df_renda_filt = df_renda_filt[df_renda_filt["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
-            elif "IN_TREINEIRO" in df_renda_filt.columns:
-                df_renda_filt["IN_TREINEIRO"] = df_renda_filt["IN_TREINEIRO"].astype(str)
-                df_renda_filt = df_renda_filt[df_renda_filt["IN_TREINEIRO"].isin(selected_treineiro_values)]
+            df_renda_filt = filter_aggregate_frame(
+                df_notas_renda,
+                selected_years,
+                selected_ufs,
+                selected_treineiro_labels,
+            )
             
+            if df_renda_filt.empty:
+                st.info("Dados de renda familiar não disponíveis no recorte atual.")
+                return
             cod_col: str = "RENDA_FAMILIAR_COD" if "RENDA_FAMILIAR_COD" in df_renda_filt.columns else ("Q006" if "Q006" in df_renda_filt.columns else str(df_renda_filt.columns[1]))
             desc_col: str = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in df_renda_filt.columns else ("Q006_DESC" if "Q006_DESC" in df_renda_filt.columns else cod_col)
             
             df_renda_agg = df_renda_filt.groupby([cod_col, desc_col])["total_candidatos"].sum().reset_index()
             df_renda_agg["Faixa_Renda"] = df_renda_agg[cod_col].astype(str) + " — " + df_renda_agg[desc_col].astype(str)
+            income_order = sorted(df_renda_agg[cod_col].dropna().unique(), key=_income_sort_key)
+            df_renda_agg[cod_col] = pd.Categorical(df_renda_agg[cod_col], categories=income_order, ordered=True)
             df_renda_agg = df_renda_agg.sort_values(by=cod_col)
             
             fig_renda = px.bar(

@@ -19,6 +19,22 @@ from app.components.desempenho_view import render_desempenho_view
 from app.components.ml_view import render_ml_view
 from app.components.geopolitica_view import render_geopolitica_view
 
+AVAILABLE_YEARS = [2021, 2022, 2023, 2024, 2025]
+TREINEIRO_LABELS = ["Não Treineiro", "Treineiro"]
+
+
+def _apply_year_preset() -> None:
+    preset = st.session_state["year_preset"]
+    if preset == "Ano mais recente":
+        st.session_state["filter_years"] = [AVAILABLE_YEARS[-1]]
+    elif preset == "Série completa":
+        st.session_state["filter_years"] = AVAILABLE_YEARS.copy()
+
+
+def _mark_years_as_custom() -> None:
+    st.session_state["year_preset"] = "Personalizado"
+
+
 # Configuração inicial da página (Layout Wide & Sidebar Oculta)
 st.set_page_config(
     page_title="ENEM Analytics & AI — Plurianual PI4",
@@ -70,41 +86,71 @@ try:
     </div>
     """, unsafe_allow_html=True)
 
-    # Carregamento prévio dos dados
-    selected_year = st.selectbox("📅 Recorte Temporal (Ano):", ["2025", "2024", "2023", "2022", "2021"], index=0, key="global_year")
-    df_raw, df_notas_uf, df_notas_renda, df_rede, df_rede_plurianual, df_socio_escola, df_demografia, ml_insights, enem_dict, df_renda_raca = load_data(selected_year)
-
-    if df_raw.empty and df_rede.empty:
-        st.error(f"Erro: Dados do ENEM {selected_year} não encontrados. Execute o pipeline de transformação primeiro.")
-        st.stop()
-
-    treineiro_map = {"Não Treineiro": "0", "Treineiro": "1"}
-
-    if not df_raw.empty and "SG_UF_PROVA" in df_raw.columns:
-        all_ufs = sorted(df_raw["SG_UF_PROVA"].dropna().unique())  # type: ignore[reportAttributeAccessIssue]
-    elif not df_rede.empty and "SG_UF_PROVA" in df_rede.columns:
-        all_ufs = sorted(df_rede["SG_UF_PROVA"].dropna().unique())  # type: ignore[reportAttributeAccessIssue]
-    else:
-        all_ufs = ["AC", "AL", "AM", "AP", "BA", "CE", "DF", "ES", "GO", "MA", "MG", "MS", "MT", "PA", "PB", "PE", "PI", "PR", "RJ", "RN", "RO", "RR", "RS", "SC", "SE", "SP", "TO"]
-
-    # --- BARRA DE AÇÕES GLOBAIS (TOOLBAR SUPERIOR COMPACTA) ---
-    col_tb1, col_tb2 = st.columns([3, 2])
-
-    with col_tb1:
-        selected_ufs = st.multiselect("📍 Selecione as UFs (Estados):", options=all_ufs, default=all_ufs)
-
-    with col_tb2:
-        selected_treineiro_labels = st.multiselect(
-            "👤 Tipo de Candidato:",
-            options=["Não Treineiro", "Treineiro"],
-            default=["Não Treineiro", "Treineiro"]
+    st.session_state.setdefault("year_preset", "Ano mais recente")
+    st.session_state.setdefault("filter_years", [AVAILABLE_YEARS[-1]])
+    year_preset_col, years_col = st.columns([1, 1])
+    with year_preset_col:
+        st.segmented_control(
+            "Recorte temporal",
+            options=["Ano mais recente", "Série completa", "Personalizado"],
+            key="year_preset",
+            on_change=_apply_year_preset,
+        )
+    with years_col:
+        st.multiselect(
+            "Anos do ENEM",
+            options=AVAILABLE_YEARS,
+            key="filter_years",
+            on_change=_mark_years_as_custom,
         )
 
-    st.markdown("---")
+    selected_years = tuple(st.session_state["filter_years"])
+    if not selected_years:
+        st.warning("Selecione pelo menos um ano do ENEM.")
+        st.stop()
 
-    # --- NAVEGAÇÃO SUPERIOR POR PÍLULAS MODERNAS (MODERN PILLS) ---
+    dashboard_data = load_data(selected_years)
+    df_notas_uf = dashboard_data["df_notas_uf"]
+    df_notas_renda = dashboard_data["df_notas_renda"]
+    df_rede = dashboard_data["df_rede"]
+    df_rede_plurianual = dashboard_data["df_rede_plurianual"]
+    df_socio_escola = dashboard_data["df_socio_escola"]
+    df_demografia = dashboard_data["df_demografia"]
+    ml_insights = dashboard_data["ml_insights"]
+    df_renda_raca = dashboard_data["df_renda_raca"]
+    selected_year = ", ".join(str(year) for year in selected_years)
+
+    all_ufs = sorted(df_notas_uf["SG_UF_PROVA"].dropna().unique().tolist())
+    st.session_state.setdefault("filter_ufs", all_ufs)
+    st.session_state["filter_ufs"] = [
+        uf for uf in st.session_state["filter_ufs"] if uf in all_ufs
+    ]
+    st.session_state.setdefault("filter_treineiro", TREINEIRO_LABELS.copy())
+
+    col_ufs, col_treineiro = st.columns([3, 2])
+    with col_ufs:
+        st.multiselect(
+            "📍 Selecione as UFs (Estados)",
+            options=all_ufs,
+            key="filter_ufs",
+        )
+    with col_treineiro:
+        st.pills(
+            "👤 Tipo de candidato",
+            options=TREINEIRO_LABELS,
+            selection_mode="multi",
+            key="filter_treineiro",
+        )
+
+    selected_ufs = st.session_state["filter_ufs"]
+    selected_treineiro_labels = st.session_state["filter_treineiro"]
+    selected_treineiro_values = [
+        "1" if label == "Treineiro" else "0"
+        for label in selected_treineiro_labels
+    ]
+
+    st.markdown("---")
     st.markdown("##### 🧭 Módulos de Análise:")
-    
     modulos_disponiveis = [
         "📊 Panorama Geográfico",
         "💰 Perfil Socioeconômico",
@@ -114,65 +160,40 @@ try:
         "🌎 Geopolítica",
         "🎓 Conclusão Estratégica"
     ]
-    
-    menu_opcao: str = st.pills(  # type: ignore[assignment]
+    menu_opcao: str = st.pills(
         "Módulos de Análise",
         options=modulos_disponiveis,
         default="📊 Panorama Geográfico",
+        key="module_selection",
         label_visibility="collapsed"
     ) or "📊 Panorama Geográfico"
 
     st.markdown("---")
-
     if not selected_ufs or not selected_treineiro_labels:
         st.warning("⚠️ Selecione pelo menos um Estado e um Tipo de Candidato nos filtros acima.")
         st.stop()
 
-    selected_treineiro_values = [treineiro_map[label] for label in selected_treineiro_labels]
-
-    if not df_raw.empty:
-        df_raw["IN_TREINEIRO"] = df_raw["IN_TREINEIRO"].astype(str)
-        if "IN_TREINEIRO_DESC" in df_raw.columns:
-            filtered_df = df_raw[
-                (df_raw["SG_UF_PROVA"].isin(selected_ufs)) &
-                (df_raw["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels))
-            ]
-        else:
-            filtered_df = df_raw[
-                (df_raw["SG_UF_PROVA"].isin(selected_ufs)) &
-                (df_raw["IN_TREINEIRO"].isin(selected_treineiro_values))
-            ]
-    else:
-        filtered_df = pd.DataFrame()
+    filtered_df = pd.DataFrame()
 
     # --- CARDS KPI GERAIS DO TOPO ---
     c1, c2, c3, c4 = st.columns(4)
-    if not df_notas_uf.empty and "SG_UF_PROVA" in df_notas_uf.columns:
-        df_kpi_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()  # type: ignore[reportAttributeAccessIssue]
-        if "IN_TREINEIRO_DESC" in df_kpi_uf.columns:
-            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]  # type: ignore[reportAttributeAccessIssue]
-            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Treineiro"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO_DESC"] == "Não Treineiro"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-        elif "IN_TREINEIRO" in df_kpi_uf.columns:
-            df_kpi_uf["IN_TREINEIRO"] = df_kpi_uf["IN_TREINEIRO"].astype(str)
-            df_kpi_filtered = df_kpi_uf[df_kpi_uf["IN_TREINEIRO"].isin(selected_treineiro_values)]  # type: ignore[reportAttributeAccessIssue]
-            total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-            total_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "1"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-            total_nao_treineiros = int(df_kpi_uf[df_kpi_uf["IN_TREINEIRO"] == "0"]["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-        else:
-            df_kpi_filtered = df_kpi_uf
-            total_inscritos = int(df_kpi_uf["total_candidatos"].sum())  # type: ignore[reportArgumentType]
-            total_treineiros = 0
-            total_nao_treineiros = total_inscritos
-            
-        uf_totals = df_kpi_filtered.groupby("SG_UF_PROVA")["total_candidatos"].sum()  # type: ignore[reportAttributeAccessIssue]
-        top_uf: str = str(uf_totals.idxmax()) if not uf_totals.empty else (selected_ufs[0] if selected_ufs else "SP")  # type: ignore[reportAttributeAccessIssue]
-    else:
-        total_inscritos = int(df_rede["total_candidatos"].sum()) if not df_rede.empty else len(filtered_df)  # type: ignore[reportArgumentType]
-        total_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "1"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else 0
-        total_nao_treineiros = int(filtered_df[filtered_df["IN_TREINEIRO"] == "0"].shape[0]) if not filtered_df.empty and "IN_TREINEIRO" in filtered_df.columns else total_inscritos
-        top_uf = str(filtered_df["SG_UF_PROVA"].value_counts().idxmax()) if not filtered_df.empty and "SG_UF_PROVA" in filtered_df.columns else (selected_ufs[0] if selected_ufs else "SP")  # type: ignore[reportAttributeAccessIssue]
+    df_kpi_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)]
+    df_kpi_filtered = df_kpi_uf[
+        df_kpi_uf["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)
+    ]
+    total_inscritos = int(df_kpi_filtered["total_candidatos"].sum())
+    total_treineiros = int(
+        df_kpi_uf.loc[
+            df_kpi_uf["IN_TREINEIRO_DESC"] == "Treineiro", "total_candidatos"
+        ].sum()
+    )
+    total_nao_treineiros = int(
+        df_kpi_uf.loc[
+            df_kpi_uf["IN_TREINEIRO_DESC"] == "Não Treineiro", "total_candidatos"
+        ].sum()
+    )
+    uf_totals = df_kpi_filtered.groupby("SG_UF_PROVA")["total_candidatos"].sum()
+    top_uf = str(uf_totals.idxmax()) if not uf_totals.empty else selected_ufs[0]
 
     with c1:
         st.markdown(f'<div class="clean-card"><div class="metric-label-clean">Total de Inscritos</div><div class="metric-value-clean">{total_inscritos:,.0f}</div></div>', unsafe_allow_html=True)
@@ -187,22 +208,58 @@ try:
 
     # === ROTEAMENTO DOS MÓDULOS MODULARIZADOS ===
     if menu_opcao == "📊 Panorama Geográfico":
-        render_geo_view(selected_ufs, selected_treineiro_labels, selected_treineiro_values, df_notas_uf, df_demografia, filtered_df)
+        render_geo_view(
+            selected_ufs,
+            selected_treineiro_labels,
+            selected_treineiro_values,
+            df_notas_uf,
+            df_demografia,
+            filtered_df,
+            selected_years,
+        )
 
     elif menu_opcao == "💰 Perfil Socioeconômico":
-        render_socio_view(df_notas_renda, selected_treineiro_labels, selected_treineiro_values, filtered_df)
+        render_socio_view(
+            df_notas_renda,
+            selected_treineiro_labels,
+            selected_treineiro_values,
+            filtered_df,
+            selected_years,
+            selected_ufs,
+        )
 
     elif menu_opcao == "🏫 Redes de Ensino":
-        render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, df_socio_escola, COLOR_MAP_REDE)
+        render_rede_view(
+            selected_year,
+            selected_ufs,
+            df_rede,
+            df_rede_plurianual,
+            df_socio_escola,
+            COLOR_MAP_REDE,
+            selected_years,
+            selected_treineiro_labels,
+        )
 
     elif menu_opcao == "📈 Desempenho TRI":
-        render_desempenho_view(selected_year, selected_ufs, df_notas_uf)
+        render_desempenho_view(
+            selected_year,
+            selected_ufs,
+            df_notas_uf,
+            selected_years,
+            selected_treineiro_labels,
+        )
 
     elif menu_opcao == "🤖 Machine Learning":
-        render_ml_view(ml_insights)
+        render_ml_view(ml_insights, selected_years)
 
     elif menu_opcao == "🌎 Geopolítica":
-        render_geopolitica_view(df_notas_uf, df_rede_plurianual)
+        render_geopolitica_view(
+            df_notas_uf,
+            df_rede_plurianual,
+            selected_years,
+            selected_ufs,
+            selected_treineiro_labels,
+        )
 
     elif menu_opcao == "🎓 Conclusão Estratégica":
         render_conclusao_estrategica()

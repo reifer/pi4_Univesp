@@ -1,55 +1,35 @@
 import streamlit as st
-import pandas as pd
-import os
+from app.utils.data_loader import get_global_filter_state, load_filtered_aggregate
 
 def render():
     # Cabeçalho encapsulado em Container Nativo
     with st.container(border=True):
         st.markdown("### 🏛️ 1. O Diagnóstico: Escola Pública vs. Escola Privada")
     
-    anos_opcoes = ["Plurianual (2021-2025)", 2025, 2024, 2023, 2022, 2021]
-    ano_escolhido = st.selectbox(
-        "Selecione o recorte temporal para a análise da rede de ensino:",
-        anos_opcoes,
-        key="fase1_ano_select"
-    )
-    
-    def carregar_dados_rede(ano):
-        caminho_pasta = f"data/processed/enem_{ano}_agg_rede_ensino_parquet"
-        if os.path.exists(caminho_pasta):
-            try:
-                return pd.read_parquet(caminho_pasta)
-            except Exception as e:
-                st.error(f"Erro ao ler os dados de rede para o ano {ano}: {e}")
-                return None
-        return None
-
-    if ano_escolhido == "Plurianual (2021-2025)":
-        with st.container(border=True):
-            st.markdown("<strong>📊 Visão Plurianual (2021–2025):</strong>", unsafe_allow_html=True)
-            st.markdown("""
-            <ul style="margin-bottom: 0; padding-left: 20px;">
-                <li><strong>O que os dados revelam:</strong> Ao longo de toda a série histórica, observa-se uma assimetria estrutural profunda. A rede pública absorve a esmagadora maioria dos concluintes e participantes do ENEM (representando entre 70% e 80% dos inscritos com dependência administrativa declarada), enquanto a rede privada concentra os menores volumes de atendimento, mas lidera consistentemente as faixas de mais alto desempenho na Teoria de Resposta ao Item (TRI) e na Redação.</li>
-            </ul>
-            """, unsafe_allow_html=True)
+    selected_years, selected_ufs, selected_treineiros = get_global_filter_state()
+    df_rede = load_filtered_aggregate("agg_rede_ensino")
+    if df_rede.empty:
+        st.info("Não há dados de rede de ensino para os filtros globais atuais.")
     else:
-        df_ano = carregar_dados_rede(ano_escolhido)
-        
-        if df_ano is not None and not df_ano.empty:
-            st.success(f"✅ Dados agregados da rede de ensino carregados com sucesso para o ENEM {ano_escolhido}.")
-            with st.expander(f"Visualizar dados brutos agregados - ENEM {ano_escolhido}"):
-                with st.container(border=True):
-                    st.dataframe(df_ano.head(10))
-        else:
-            st.warning(f"⚠️ Os arquivos agregados da pasta `enem_{ano_escolhido}_agg_rede_ensino_parquet` não foram encontrados.")
-
+        years_label = ", ".join(str(year) for year in selected_years)
         with st.container(border=True):
-            st.markdown(f"<strong>🎯 Diagnóstico Específico para o ENEM {ano_escolhido}:</strong>", unsafe_allow_html=True)
+            st.markdown(
+                f"<strong>📊 Diagnóstico do recorte global ({years_label}):</strong>",
+                unsafe_allow_html=True,
+            )
             st.markdown("""
             <ul style="margin-bottom: 0; padding-left: 20px;">
-                <li><strong>O que os dados revelam:</strong> O cruzamento das notas com a dependência administrativa comprova que o fosso de desempenho entre estudantes de escolas públicas e privadas permanece acentuado, refletindo diretamente as desigualdades de infraestrutura e suporte pedagógico.</li>
+                <li><strong>O que os dados revelam:</strong> A comparação entre dependências administrativas permite identificar diferenças de participação e desempenho dentro do recorte de ano, UF e tipo de candidato selecionado no painel.</li>
             </ul>
             """, unsafe_allow_html=True)
+        summary = df_rede.groupby(
+            "TP_DEPENDENCIA_ADM_ESC_DESC", as_index=False
+        )["total_candidatos"].sum()
+        st.dataframe(summary, hide_index=True, width="stretch")
+        st.caption(
+            f"Filtros globais — UFs: {', '.join(selected_ufs)} · "
+            f"candidatos: {', '.join(selected_treineiros)}"
+        )
 
     # Colunas finais estruturadas com Containers Nativos
     col_critica, col_proposta = st.columns(2)

@@ -1,6 +1,9 @@
 import os
 import importlib.util
+from pathlib import Path
+
 import pytest
+from streamlit.testing.v1 import AppTest
 
 # Caminho para os componentes de visualização do dashboard
 VIEWS_DIR = "src/app/components"
@@ -56,6 +59,39 @@ def test_conclusao_modules_can_be_imported():
             spec.loader.exec_module(module)
         except Exception as e:
             pytest.fail(f"Erro ao importar o módulo estratégico {mod_file}: {e}")
+
+
+@pytest.mark.parametrize(
+    ("years", "ufs", "candidates"),
+    [
+        ([2021, 2024], ["SP"], ["Treineiro"]),
+        ([2025], [], ["Não Treineiro"]),
+    ],
+)
+def test_all_views_render_with_restricted_and_empty_global_filters(years, ufs, candidates):
+    dashboard_path = Path(__file__).resolve().parents[1] / "src/app/dashboard.py"
+    app = AppTest.from_file(dashboard_path, default_timeout=90).run()
+    assert not app.exception
+
+    app.multiselect(key="filter_years").set_value(years).run()
+    app.multiselect(key="filter_ufs").set_value(ufs).run()
+    app.pills(key="filter_treineiro").set_value(candidates).run()
+
+    modules = (
+        "📊 Panorama Geográfico",
+        "💰 Perfil Socioeconômico",
+        "🏫 Redes de Ensino",
+        "📈 Desempenho TRI",
+        "🤖 Machine Learning",
+        "🌎 Geopolítica",
+        "🎓 Conclusão Estratégica",
+    )
+    for module in modules:
+        app.pills(key="module_selection").set_value(module).run()
+        assert not app.exception, (
+            f"Module {module} raised with years={years}, ufs={ufs}, "
+            f"candidates={candidates}: {app.exception}"
+        )
 
 # O que esse teste valida?
     #1. Valida a árvore de views: Assegura que as pastas de componentes e conclusões estratégicas estão presentes.

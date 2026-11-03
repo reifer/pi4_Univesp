@@ -1,7 +1,5 @@
 import streamlit as st
-import pandas as pd
-import os
-import json
+from app.utils.data_loader import get_global_filter_state, load_data
 
 def render():
     st.markdown("---")
@@ -18,14 +16,17 @@ def render():
         </p>
         """, unsafe_allow_html=True)
     
-    ml_insights_path = "data/processed/enem_2025_ml_insights.json"
-    ml_data = {}
-    if os.path.exists(ml_insights_path):
-        try:
-            with open(ml_insights_path, "r", encoding="utf-8") as f:
-                ml_data = json.load(f)
-        except Exception:
-            pass
+    years, ufs, treineiros = get_global_filter_state()
+    st.caption(
+        f"Filtros ativos: ENEM {', '.join(map(str, years))}; "
+        f"UFs {', '.join(ufs)}; candidatos {', '.join(treineiros)}."
+    )
+    st.info(
+        "A síntese e as diretrizes abaixo mantêm a perspectiva nacional plurianual. "
+        "As métricas do modelo são uma referência de 2025 e não são recalculadas "
+        "pelos filtros globais."
+    )
+    ml_data = load_data((2025,))["ml_insights"]
 
     if ml_data and "modelo_machine_learning" in ml_data:
         metrics = ml_data["modelo_machine_learning"].get("metricas_avaliacao", {})

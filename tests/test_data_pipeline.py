@@ -1,42 +1,80 @@
 from pyspark.errors import TempTableAlreadyExistsException
 import os
+from decimal import Decimal, ROUND_HALF_UP
 import pandas as pd
 import pytest
 
 # Caminho base para os dados processados do projeto
 DATA_DIR = "data/processed"
+AGGREGATE_NAMES = (
+    "agg_demografia",
+    "agg_notas_renda",
+    "agg_notas_uf",
+    "agg_rede_ensino",
+    "agg_renda_raca",
+    "agg_socio_escola",
+)
+SCORE_ALIASES = ("cn", "ch", "lc", "mt", "redacao")
 
 def test_data_directory_exists():
     """Valida se o diretório principal de dados processados existe."""
     assert os.path.exists(DATA_DIR), f"O diretório {DATA_DIR} não foi encontrado."
 
 @pytest.mark.parametrize("ano", [2021, 2022, 2023, 2024, 2025])
-def test_parquet_rede_ensino_structure(ano):
-    """
-    Verifica se os arquivos agregados de rede de ensino existem 
-    e se possuem as colunas mínimas esperadas para as análises.
-    """
-    caminho_pasta = os.path.join(DATA_DIR, f"enem_{ano}_agg_rede_ensino_parquet")
-    
-    # Se a pasta não existir para um ano específico, o teste avisa mas não quebra obrigatoriamente,
-    # a menos que o ano seja o baseline principal. Vamos verificar a existência.
-    if not os.path.exists(caminho_pasta):
-        pytest.skip(f"Pasta de rede de ensino para o ano {ano} não encontrada em {caminho_pasta}.")
+@pytest.mark.parametrize("aggregate_name", AGGREGATE_NAMES)
+def test_aggregates_have_canonical_dimensions_and_exact_weighting(ano, aggregate_name):
+    aggregate_path = os.path.join(DATA_DIR, f"enem_{ano}_{aggregate_name}_parquet")
+    assert os.path.isdir(aggregate_path), f"Agregação ausente: {aggregate_path}"
 
-    # Procura por arquivos parquet dentro da pasta
-    arquivos_parquet = [f for f in os.listdir(caminho_pasta) if f.endswith(".parquet")]
-    assert len(arquivos_parquet) > 0, f"Nenhum arquivo .parquet encontrado em {caminho_pasta}."
+    df = pd.read_parquet(aggregate_path)
+    assert not df.empty, f"A agregação {aggregate_path} está vazia."
+    assert {"NU_ANO", "SG_UF_PROVA", "IN_TREINEIRO", "IN_TREINEIRO_DESC", "total_candidatos"} <= set(df.columns)
+    assert df[["NU_ANO", "SG_UF_PROVA", "IN_TREINEIRO", "IN_TREINEIRO_DESC"]].notna().all().all()
+    assert set(df["NU_ANO"]) == {ano}
+    assert (df["total_candidatos"] > 0).all()
+    assert (df.loc[df["IN_TREINEIRO"] == 1, "IN_TREINEIRO_DESC"] == "Treineiro").all()
+    assert (df.loc[df["IN_TREINEIRO"] == 0, "IN_TREINEIRO_DESC"] == "Não Treineiro").all()
 
-    # Tenta ler o primeiro arquivo parquet encontrado para validar o schema
-    arquivo_exemplo = os.path.join(caminho_pasta, arquivos_parquet[0])
-    df = pd.read_parquet(arquivo_exemplo)
+    if aggregate_name != "agg_demografia":
+        for alias in SCORE_ALIASES:
+            sum_column = f"soma_notas_{alias}"
+            count_column = f"total_notas_{alias}"
+            mean_column = f"media_{alias}"
+            assert {sum_column, count_column, mean_column} <= set(df.columns)
+            assert (df[count_column] >= 0).all()
+            assert (df[count_column] <= df["total_candidatos"]).all()
 
-    assert not df.empty, f"O DataFrame lido de {arquivo_exemplo} está vazio."
-    
-    # Validações de colunas comuns esperadas nas agregações de rede
-    colunas_esperadas = ["total_candidatos"]
-    for col in colunas_esperadas:
-        assert col in df.columns, f"A coluna obrigatória '{col}' está ausente no dataset de rede {ano}."
+            valid = df[count_column] > 0
+            expected_mean = (
+                df.loc[valid, sum_column] / df.loc[valid, count_column]
+            ).map(
+                lambda value: float(
+                    Decimal(str(value)).quantize(
+                        Decimal("0.01"),
+                        rounding=ROUND_HALF_UP,
+                    )
+                )
+            )
+            assert (
+                df.loc[valid, mean_column].sub(expected_mean).abs() < 1e-6
+            ).all()
+
+
+def test_aggregates_fit_dashboard_size_budget():
+    total_bytes = sum(
+        os.path.getsize(path)
+        for aggregate_path in (
+            os.path.join(DATA_DIR, f"enem_{ano}_{aggregate_name}_parquet")
+            for ano in range(2021, 2026)
+            for aggregate_name in AGGREGATE_NAMES
+        )
+        for path in (
+            os.path.join(aggregate_path, filename)
+            for filename in os.listdir(aggregate_path)
+            if filename.endswith(".parquet")
+        )
+    )
+    assert total_bytes < 5_000_000
 
 def test_agrupamento_faixas_renda_logica():
     """

@@ -5,3 +5,7 @@ __pycache__/
 data/processed/*_cleaned_parquet/
 data/processed/*_enriched_parquet/
 data/tmp_spill/
+
+# Checksums gerados automaticamente pelo Spark (não versionar)
+data/processed/**/.*.parquet.crc
+data/processed/**/.*.crc

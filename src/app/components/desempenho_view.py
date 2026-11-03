@@ -1,8 +1,28 @@
 import streamlit as st
 import plotly.express as px
 
-def render_desempenho_view(selected_year, selected_ufs, df_notas_uf):
+from app.utils.data_loader import filter_aggregate_frame, weighted_group_summary
+
+
+SCORE_METRICS = {
+    "media_mt": ("soma_notas_mt", "total_notas_mt"),
+    "media_redacao": ("soma_notas_redacao", "total_notas_redacao"),
+    "media_cn": ("soma_notas_cn", "total_notas_cn"),
+    "media_ch": ("soma_notas_ch", "total_notas_ch"),
+    "media_lc": ("soma_notas_lc", "total_notas_lc"),
+}
+
+
+def render_desempenho_view(
+    selected_year,
+    selected_ufs,
+    df_notas_uf,
+    selected_years=None,
+    selected_treineiro_labels=None,
+):
     """Renderiza o módulo de Desempenho e Notas Médias (TRI) utilizando containers nativos."""
+    selected_years = selected_years or sorted(df_notas_uf["NU_ANO"].unique().tolist())
+    selected_treineiro_labels = selected_treineiro_labels or ["Não Treineiro", "Treineiro"]
     
     with st.container(border=True):
         st.markdown(f"### 📈 Análise de Desempenho e Notas Médias no ENEM {selected_year}")
@@ -10,14 +30,25 @@ def render_desempenho_view(selected_year, selected_ufs, df_notas_uf):
     if df_notas_uf.empty:
         st.info("Dados agregados de notas não encontrados.")
     else:
-        f_notas_uf = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)]
+        f_notas_uf = filter_aggregate_frame(
+            df_notas_uf,
+            selected_years,
+            selected_ufs,
+            selected_treineiro_labels,
+        )
         if not f_notas_uf.empty and f_notas_uf["total_candidatos"].sum() > 0:
-            tot_cand = f_notas_uf["total_candidatos"].sum()
-            avg_redacao = (f_notas_uf["media_redacao"] * f_notas_uf["total_candidatos"]).sum() / tot_cand
-            avg_mt = (f_notas_uf["media_mt"] * f_notas_uf["total_candidatos"]).sum() / tot_cand
-            avg_cn = (f_notas_uf["media_cn"] * f_notas_uf["total_candidatos"]).sum() / tot_cand
-            avg_ch = (f_notas_uf["media_ch"] * f_notas_uf["total_candidatos"]).sum() / tot_cand
-            avg_lc = (f_notas_uf["media_lc"] * f_notas_uf["total_candidatos"]).sum() / tot_cand
+            score_metrics = {
+                name: columns
+                for name, columns in SCORE_METRICS.items()
+                if set(columns) <= set(f_notas_uf.columns)
+            }
+            scores = weighted_group_summary(f_notas_uf, [], score_metrics)
+            score_values = scores.iloc[0]
+            avg_redacao = score_values["media_redacao"]
+            avg_mt = score_values["media_mt"]
+            avg_cn = score_values["media_cn"]
+            avg_ch = score_values["media_ch"]
+            avg_lc = score_values["media_lc"]
 
             n1, n2, n3, n4, n5 = st.columns(5)
             with n1:
@@ -39,7 +70,15 @@ def render_desempenho_view(selected_year, selected_ufs, df_notas_uf):
             with st.container(border=True):
                 st.markdown("##### Desempenho Médio por UF")
                 
-                df_grafico_uf = f_notas_uf.groupby("SG_UF_PROVA")[["media_mt", "media_redacao"]].mean().reset_index()
+                df_grafico_uf = weighted_group_summary(
+                    f_notas_uf,
+                    ["SG_UF_PROVA"],
+                    {
+                        name: score_metrics[name]
+                        for name in ("media_mt", "media_redacao")
+                        if name in score_metrics
+                    },
+                )
                 fig_notas_uf = px.bar(
                     df_grafico_uf,
                     x="SG_UF_PROVA", y=["media_mt", "media_redacao"],

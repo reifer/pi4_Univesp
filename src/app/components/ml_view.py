@@ -2,11 +2,23 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 
-def render_ml_view(ml_insights):
+def render_ml_view(ml_insights, selected_years=None):
     """Renderiza o módulo de Machine Learning & IA com containers nativos responsivos."""
+    selected_years = selected_years or [2025]
     
     with st.container(border=True):
         st.markdown("### 🧠 Performance do Modelo Preditivo")
+
+    if len(selected_years) > 1:
+        st.info(
+            "O modelo preditivo disponível é uma referência treinada para 2025; "
+            "as métricas abaixo não são recalculadas para a série plurianual."
+        )
+    elif selected_years[0] != 2025:
+        st.warning(
+            f"Não há modelo específico para {selected_years[0]}. "
+            "As métricas exibidas correspondem ao modelo de referência de 2025."
+        )
     
     if ml_insights and "modelo_machine_learning" in ml_insights:
         metrics = ml_insights["modelo_machine_learning"]["metricas_avaliacao"]

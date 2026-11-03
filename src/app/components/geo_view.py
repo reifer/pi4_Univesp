@@ -2,8 +2,20 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-def render_geo_view(selected_ufs, selected_treineiro_labels, selected_treineiro_values, df_notas_uf, df_demografia, filtered_df):
+from app.utils.data_loader import filter_aggregate_frame
+
+
+def render_geo_view(
+    selected_ufs,
+    selected_treineiro_labels,
+    selected_treineiro_values,
+    df_notas_uf,
+    df_demografia,
+    filtered_df,
+    selected_years=None,
+):
     """Renderiza o módulo de Panorama Geográfico (UF) e Distribuição por Sexo com containers nativos responsivos."""
+    selected_years = selected_years or sorted(df_notas_uf["NU_ANO"].unique().tolist())
     
     col_left, col_right = st.columns([6, 4])
     
@@ -12,12 +24,12 @@ def render_geo_view(selected_ufs, selected_treineiro_labels, selected_treineiro_
             st.markdown("##### 📍 Inscritos por Estado (UF)")
             
             if not df_notas_uf.empty and "SG_UF_PROVA" in df_notas_uf.columns:
-                df_uf_agg = df_notas_uf[df_notas_uf["SG_UF_PROVA"].isin(selected_ufs)].copy()
-                if "IN_TREINEIRO_DESC" in df_uf_agg.columns:
-                    df_uf_agg = df_uf_agg[df_uf_agg["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
-                elif "IN_TREINEIRO" in df_uf_agg.columns:
-                    df_uf_agg["IN_TREINEIRO"] = df_uf_agg["IN_TREINEIRO"].astype(str)
-                    df_uf_agg = df_uf_agg[df_uf_agg["IN_TREINEIRO"].isin(selected_treineiro_values)]
+                df_uf_agg = filter_aggregate_frame(
+                    df_notas_uf,
+                    selected_years,
+                    selected_ufs,
+                    selected_treineiro_labels,
+                )
                 
                 uf_counts = df_uf_agg.groupby("SG_UF_PROVA")["total_candidatos"].sum().reset_index()
                 uf_counts.columns = ["SG_UF_PROVA", "total_inscritos"]
@@ -60,12 +72,12 @@ def render_geo_view(selected_ufs, selected_treineiro_labels, selected_treineiro_
             st.markdown("##### 👥 Distribuição por Sexo")
             
             if not df_demografia.empty and "TP_SEXO_DESC" in df_demografia.columns:
-                df_demo_filt = df_demografia[df_demografia["SG_UF_PROVA"].isin(selected_ufs)].copy()
-                if "IN_TREINEIRO_DESC" in df_demo_filt.columns:
-                    df_demo_filt = df_demo_filt[df_demo_filt["IN_TREINEIRO_DESC"].isin(selected_treineiro_labels)]
-                elif "IN_TREINEIRO" in df_demo_filt.columns:
-                    df_demo_filt["IN_TREINEIRO"] = df_demo_filt["IN_TREINEIRO"].astype(str)
-                    df_demo_filt = df_demo_filt[df_demo_filt["IN_TREINEIRO"].isin(selected_treineiro_values)]
+                df_demo_filt = filter_aggregate_frame(
+                    df_demografia,
+                    selected_years,
+                    selected_ufs,
+                    selected_treineiro_labels,
+                )
                 
                 sex_counts = df_demo_filt.groupby("TP_SEXO_DESC")["total_candidatos"].sum()
                 fig_pie = go.Figure(data=[go.Pie(labels=sex_counts.index.tolist(), values=sex_counts.values.tolist(), hole=.5, marker_colors=["#ec4899", "#2563eb"])])

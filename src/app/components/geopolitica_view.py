@@ -2,8 +2,26 @@ import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
 
-def render_geopolitica_view(df_notas_uf, df_rede_plurianual):
+from app.utils.data_loader import filter_aggregate_frame, weighted_group_summary
+
+
+SCORE_METRICS = {
+    "media_matematica": ("soma_notas_mt", "total_notas_mt"),
+    "media_redacao": ("soma_notas_redacao", "total_notas_redacao"),
+}
+
+
+def render_geopolitica_view(
+    df_notas_uf,
+    df_rede_plurianual,
+    selected_years=None,
+    selected_ufs=None,
+    selected_treineiro_labels=None,
+):
     """Renderiza o módulo de Geopolítica & Séries Temporais com containers nativos responsivos."""
+    selected_years = selected_years or sorted(df_notas_uf["NU_ANO"].unique().tolist())
+    selected_ufs = selected_ufs or sorted(df_notas_uf["SG_UF_PROVA"].unique().tolist())
+    selected_treineiro_labels = selected_treineiro_labels or ["Não Treineiro", "Treineiro"]
     
     with st.container(border=True):
         st.markdown("### 🌎 Geopolítica e Séries Temporais Plurianual")
@@ -22,12 +40,19 @@ def render_geopolitica_view(df_notas_uf, df_rede_plurianual):
                 'PR': 'Sul', 'RS': 'Sul', 'SC': 'Sul'
             }
             if not df_notas_uf.empty:
-                df_regiao = df_notas_uf.copy()
+                df_regiao = filter_aggregate_frame(
+                    df_notas_uf,
+                    selected_years,
+                    selected_ufs,
+                    selected_treineiro_labels,
+                )
                 df_regiao["Regiao"] = df_regiao["SG_UF_PROVA"].map(uf_to_regiao)
-                df_regiao_agg = df_regiao.groupby("Regiao").agg(
-                    media_matematica=("media_mt", "mean"),
-                    media_redacao=("media_redacao", "mean")
-                ).reset_index()
+                metrics = {
+                    name: columns
+                    for name, columns in SCORE_METRICS.items()
+                    if set(columns) <= set(df_regiao.columns)
+                }
+                df_regiao_agg = weighted_group_summary(df_regiao, ["Regiao"], metrics)
                 
                 fig_reg = px.bar(
                     df_regiao_agg, x="Regiao", y=["media_matematica", "media_redacao"], barmode="group",
@@ -50,10 +75,22 @@ def render_geopolitica_view(df_notas_uf, df_rede_plurianual):
             st.markdown("##### 📈 Evolução Histórica Nacional Plurianual")
             
             if not df_rede_plurianual.empty and "NU_ANO" in df_rede_plurianual.columns:
-                nat_series = df_rede_plurianual.groupby("NU_ANO").agg(
-                    Matematica=("media_mt", lambda x: (x * df_rede_plurianual.loc[x.index, "total_candidatos"]).sum() / df_rede_plurianual.loc[x.index, "total_candidatos"].sum() if df_rede_plurianual.loc[x.index, "total_candidatos"].sum() > 0 else 0),
-                    Redacao=("media_redacao", lambda x: (x * df_rede_plurianual.loc[x.index, "total_candidatos"]).sum() / df_rede_plurianual.loc[x.index, "total_candidatos"].sum() if df_rede_plurianual.loc[x.index, "total_candidatos"].sum() > 0 else 0)
-                ).reset_index()
+                df_national = filter_aggregate_frame(
+                    df_rede_plurianual,
+                    selected_years,
+                    selected_ufs,
+                    selected_treineiro_labels,
+                )
+                metrics = {
+                    "Matematica": SCORE_METRICS["media_matematica"],
+                    "Redacao": SCORE_METRICS["media_redacao"],
+                }
+                metrics = {
+                    name: columns
+                    for name, columns in metrics.items()
+                    if set(columns) <= set(df_national.columns)
+                }
+                nat_series = weighted_group_summary(df_national, ["NU_ANO"], metrics)
                 fig_time = px.line(
                     nat_series, x="NU_ANO", y=["Matematica", "Redacao"], markers=True,
                     title="Evolução Nacional", labels={"value": "Média", "variable": "Componente"}

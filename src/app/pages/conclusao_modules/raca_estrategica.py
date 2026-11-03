@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
-import os
 import plotly.express as px
+from app.utils.data_loader import get_global_filter_state, load_filtered_aggregate
 
 def _agrupar_faixas_renda_macro(texto_renda):
     if not isinstance(texto_renda, str):
@@ -30,12 +30,7 @@ def render():
     with st.container(border=True):
         st.markdown("### ⚖️ 3. A Intersecção Estrutural: Renda Familiar x Raça/Cor e Desempenho")
     
-    anos_opcoes_f3_raca = ["Plurianual (2021-2025)", 2025, 2024, 2023, 2022, 2021]
-    ano_f3_raca = st.selectbox(
-        "Selecione o recorte temporal para a análise de Renda x Raça:",
-        anos_opcoes_f3_raca,
-        key="fase_raca_ano_select"
-    )
+    years, ufs, treineiros = get_global_filter_state()
     
     with st.expander("📖 Nota Metodológica: Consolidação das Faixas de Renda (Agrupamento Macro)", expanded=False):
         with st.container(border=True):
@@ -48,18 +43,9 @@ def render():
             * **5. Alta Renda (> R$ 20k):** Faixas de topo da pirâmide socioeconômica declarada e rendimentos superiores.
             """)
     
-    def carregar_dados_renda_raca(ano):
-        caminho_pasta = f"data/processed/enem_{ano}_agg_renda_raca_parquet"
-        if os.path.exists(caminho_pasta):
-            try:
-                df = pd.read_parquet(caminho_pasta)
-                df["NU_ANO"] = int(ano)
-                return df
-            except Exception as e:
-                return pd.DataFrame()
-        return pd.DataFrame()
-
-    if ano_f3_raca == "Plurianual (2021-2025)":
+    df_raca = load_filtered_aggregate("agg_renda_raca")
+    ano_label = ", ".join(map(str, years))
+    if len(years) > 1:
         with st.container(border=True):
             st.markdown("<strong>📊 Visão Plurianual da Intersecção Renda x Raça (2021–2025):</strong>", unsafe_allow_html=True)
             st.markdown("""
@@ -68,46 +54,77 @@ def render():
             </ul>
             """, unsafe_allow_html=True)
         
-        dfs_pluri_raca = []
-        for a in [2021, 2022, 2023, 2024, 2025]:
-            df_temp = carregar_dados_renda_raca(a)
-            if not df_temp.empty:
-                dfs_pluri_raca.append(df_temp)
-                
-        if dfs_pluri_raca:
-            df_pluri_raca_total = pd.concat(dfs_pluri_raca, ignore_index=True)
+        if not df_raca.empty:
+            df_pluri_raca_total = df_raca.copy()
             if "RENDA_FAMILIAR_DESC" in df_pluri_raca_total.columns and "TP_COR_RACA_DESC" in df_pluri_raca_total.columns:
                 df_pluri_raca_total["MACRO_RENDA"] = df_pluri_raca_total["RENDA_FAMILIAR_DESC"].apply(_agrupar_faixas_renda_macro)
-                df_agrupado = df_pluri_raca_total.groupby(["MACRO_RENDA", "TP_COR_RACA_DESC"])["media_mt"].mean().reset_index()  # type: ignore[reportAttributeAccessIssue]
-                
+                df_agrupado = (
+                    df_pluri_raca_total.groupby(
+                        ["MACRO_RENDA", "TP_COR_RACA_DESC"], as_index=False
+                    )
+                    .agg(
+                        soma_notas_mt=("soma_notas_mt", "sum"),
+                        total_notas_mt=("total_notas_mt", "sum"),
+                    )
+                )
+                df_agrupado["media_mt"] = (
+                    df_agrupado["soma_notas_mt"]
+                    .div(df_agrupado["total_notas_mt"])
+                    .where(df_agrupado["total_notas_mt"] > 0)
+                )
+                df_agrupado = df_agrupado.dropna(subset=["media_mt"])
+                df_agrupado["percentual_media_mt"] = (
+                    df_agrupado["media_mt"]
+                    .div(
+                        df_agrupado.groupby("MACRO_RENDA")["media_mt"].transform("sum")
+                    )
+                    .mul(100)
+                )
                 with st.container(border=True):
                     fig_raca_pluri = px.bar(
                         df_agrupado,
-                        x="media_mt", y="MACRO_RENDA", color="TP_COR_RACA_DESC", barmode="group",
+                        x="percentual_media_mt",
+                        y="MACRO_RENDA",
+                        color="TP_COR_RACA_DESC",
+                        custom_data=["media_mt"],
+                        barmode="stack",
                         orientation="h",
-                        title="Média Plurianual de Matemática por Bloco Macro de Renda e Raça/Cor",
-                        labels={"MACRO_RENDA": "Bloco Macro de Renda Familiar", "media_mt": "Nota Média Matemática", "TP_COR_RACA_DESC": "Raça / Cor"}
+                        title="Distribuição Proporcional da Média Plurianual de Matemática por Bloco Macro de Renda e Raça/Cor",
+                        labels={
+                            "MACRO_RENDA": "Bloco Macro de Renda Familiar",
+                            "percentual_media_mt": "Proporção da média de Matemática",
+                            "TP_COR_RACA_DESC": "Raça / Cor",
+                        },
+                    )
+                    fig_raca_pluri.update_traces(
+                        hovertemplate=(
+                            "Raça / Cor: %{fullData.name}<br>"
+                            "Proporção da média no bloco: %{x:.1f}%<br>"
+                            "Nota média de Matemática: %{customdata[0]:.1f}"
+                            "<extra></extra>"
+                        )
                     )
                     fig_raca_pluri.update_layout(
                         template="plotly_white", 
                         height=500,
-                        margin=dict(l=20, r=15, t=60, b=130),
+                        margin=dict(l=20, r=15, t=60, b=120),
                         yaxis=dict(tickfont=dict(size=10), automargin=True),
+                        xaxis=dict(range=[0, 100], ticksuffix="%", automargin=True),
                         legend=dict(
                             title_text="Raça / Cor",
                             orientation="h",
-                            y=-0.22,
+                            y=-0.3,
                             x=0.5,
                             xanchor="center",
                             yanchor="top",
-                            font=dict(size=9),
+                            font=dict(size=10),
                         ),
                     )
                     st.plotly_chart(fig_raca_pluri, width="stretch")
-    else:
-        df_raca_ano = carregar_dados_renda_raca(ano_f3_raca)
+    elif not df_raca.empty:
+        df_raca_ano = df_raca.copy()
         if not df_raca_ano.empty:
-            st.success(f"✅ Dados agregados de Renda x Raça carregados com sucesso para o ENEM {ano_f3_raca}.")
+            st.success(f"✅ Dados agregados de Renda x Raça carregados para ENEM {ano_label}.")
             
             metrica_raca: str = st.selectbox(  # type: ignore[assignment]
                 "Métrica de Desempenho:",
@@ -119,19 +136,39 @@ def render():
                     "media_ch": "Ciências Humanas",
                     "media_lc": "Linguagens e Códigos"
                 }[x],
-                key=f"select_metrica_raca_{ano_f3_raca}"
+                key="select_metrica_raca"
             ) or "media_mt"
             
             if "RENDA_FAMILIAR_DESC" in df_raca_ano.columns and "TP_COR_RACA_DESC" in df_raca_ano.columns:
                 df_raca_ano["MACRO_RENDA"] = df_raca_ano["RENDA_FAMILIAR_DESC"].apply(_agrupar_faixas_renda_macro)
-                df_agrupado_ano = df_raca_ano.groupby(["MACRO_RENDA", "TP_COR_RACA_DESC"])[metrica_raca].mean().reset_index()  # type: ignore[reportAttributeAccessIssue]
+                metric_suffix = {
+                    "media_mt": "mt",
+                    "media_redacao": "redacao",
+                    "media_cn": "cn",
+                    "media_ch": "ch",
+                    "media_lc": "lc",
+                }[metrica_raca]
+                df_agrupado_ano = (
+                    df_raca_ano.groupby(
+                        ["MACRO_RENDA", "TP_COR_RACA_DESC"], as_index=False
+                    )
+                    .agg(
+                        _score_sum=(f"soma_notas_{metric_suffix}", "sum"),
+                        _score_count=(f"total_notas_{metric_suffix}", "sum"),
+                    )
+                )
+                df_agrupado_ano[metrica_raca] = (
+                    df_agrupado_ano["_score_sum"]
+                    .div(df_agrupado_ano["_score_count"])
+                    .where(df_agrupado_ano["_score_count"] > 0)
+                )
                 
                 with st.container(border=True):
                     fig_raca_ano = px.bar(
                         df_agrupado_ano,
                         x="MACRO_RENDA", y=metrica_raca, color="TP_COR_RACA_DESC",
                         barmode="group",
-                        title=f"Desempenho por Bloco Macro de Renda segmentado por Raça/Cor — ENEM {ano_f3_raca}",
+                        title=f"Desempenho por Bloco Macro de Renda segmentado por Raça/Cor — ENEM {ano_label}",
                         labels={"MACRO_RENDA": "Bloco Macro de Renda Familiar", metrica_raca: "Nota Média TRI", "TP_COR_RACA_DESC": "Raça / Cor"}
                     )
                     fig_raca_ano.update_layout(
@@ -141,9 +178,9 @@ def render():
                         xaxis=dict(tickangle=-15, tickfont=dict(size=11), automargin=True),
                         legend_title="Raça / Cor"
                     )
-                    st.plotly_chart(fig_raca_ano, use_container_width=True)
-        else:
-            st.warning(f"⚠️ Dados de Renda x Raça para o ano {ano_f3_raca} não encontrados na pasta de processados.")
+                    st.plotly_chart(fig_raca_ano, width="stretch")
+    else:
+        st.info("Não há dados de renda e raça para os filtros globais atuais.")
 
     # Containers laterais estruturados com bordas nativas
     col_critica_f3_raca, col_proposta_f3_raca = st.columns(2)

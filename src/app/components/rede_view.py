@@ -2,8 +2,32 @@ import streamlit as st
 import plotly.express as px
 import pandas as pd
 
-def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, df_socio_escola, COLOR_MAP_REDE):
+from app.utils.data_loader import filter_aggregate_frame, weighted_group_summary
+
+
+SCORE_METRICS = {
+    "media_mt": ("soma_notas_mt", "total_notas_mt"),
+    "media_redacao": ("soma_notas_redacao", "total_notas_redacao"),
+    "media_cn": ("soma_notas_cn", "total_notas_cn"),
+    "media_ch": ("soma_notas_ch", "total_notas_ch"),
+    "media_lc": ("soma_notas_lc", "total_notas_lc"),
+    "media_geral": ("soma_notas_geral", "total_notas_geral"),
+}
+
+
+def render_rede_view(
+    selected_year,
+    selected_ufs,
+    df_rede,
+    df_rede_plurianual,
+    df_socio_escola,
+    COLOR_MAP_REDE,
+    selected_years=None,
+    selected_treineiro_labels=None,
+):
     """Renderiza o módulo de Redes de Ensino e Análise Plurianual com containers nativos responsivos."""
+    selected_years = selected_years or sorted(df_rede["NU_ANO"].unique().tolist())
+    selected_treineiro_labels = selected_treineiro_labels or ["Não Treineiro", "Treineiro"]
     
     with st.container(border=True):
         st.markdown(f"### 🏫 Granularidade e Desempenho por Rede de Ensino — ENEM {selected_year} & Plurianual")
@@ -19,10 +43,12 @@ def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, d
         )
         return
 
-    if "SG_UF_PROVA" in df_rede.columns:
-        df_rede_filtered = df_rede[df_rede["SG_UF_PROVA"].isin(selected_ufs)].copy()
-    else:
-        df_rede_filtered = df_rede.copy()
+    df_rede_filtered = filter_aggregate_frame(
+        df_rede,
+        selected_years,
+        selected_ufs,
+        selected_treineiro_labels,
+    )
 
     if df_rede_filtered.empty:
         st.warning(
@@ -31,20 +57,16 @@ def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, d
         )
         return
 
-    def _make_pond_agg(col_name: str, grp_df: pd.DataFrame):
-        def _calc(x: pd.Series) -> float:  # type: ignore[type-arg]
-            total = grp_df.loc[x.index, "total_candidatos"].sum()
-            if total > 0:
-                return float((x * grp_df.loc[x.index, "total_candidatos"]).sum() / total)
-            return 0.0
-        return pd.NamedAgg(column=col_name, aggfunc=_calc)
-
-    _nota_agg_cols = [c for c in ["media_mt", "media_redacao", "media_cn", "media_ch", "media_lc", "media_geral"] if c in df_rede_filtered.columns]
-
-    rede_summary = df_rede_filtered.groupby("TP_DEPENDENCIA_ADM_ESC_DESC").agg(
-        total_candidatos=("total_candidatos", "sum"),
-        **{col: _make_pond_agg(col, df_rede_filtered) for col in _nota_agg_cols}
-    ).reset_index()
+    available_metrics = {
+        name: columns
+        for name, columns in SCORE_METRICS.items()
+        if set(columns) <= set(df_rede_filtered.columns)
+    }
+    rede_summary = weighted_group_summary(
+        df_rede_filtered,
+        ["TP_DEPENDENCIA_ADM_ESC_DESC"],
+        available_metrics,
+    )
 
     total_geral_rede = rede_summary["total_candidatos"].sum()
     rede_summary["percentual_alunos"] = (
@@ -170,28 +192,27 @@ def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, d
     st.markdown("---")
     st.markdown("#### 3️⃣ Evolução Histórica Plurianual por Rede de Ensino")
     if not df_rede_plurianual.empty and "NU_ANO" in df_rede_plurianual.columns:
-        _uf_mask = (
-            df_rede_plurianual["SG_UF_PROVA"].isin(selected_ufs)
-            if "SG_UF_PROVA" in df_rede_plurianual.columns
-            else pd.Series(True, index=df_rede_plurianual.index)
+        df_pluri_filtered = filter_aggregate_frame(
+            df_rede_plurianual,
+            selected_years,
+            selected_ufs,
+            selected_treineiro_labels,
         )
-        df_pluri_filtered = df_rede_plurianual[
-            (df_rede_plurianual["TP_DEPENDENCIA_ADM_ESC_DESC"] != "Não Informado") & _uf_mask
+        df_pluri_filtered = df_pluri_filtered[
+            df_pluri_filtered["TP_DEPENDENCIA_ADM_ESC_DESC"] != "Não Informado"
         ].copy()
 
         if not df_pluri_filtered.empty:
-            _pluri_nota_cols = [c for c in ["media_mt", "media_redacao", "media_cn", "media_ch", "media_lc", "media_geral"] if c in df_pluri_filtered.columns]
-
-            def _make_pp(col: str, ref_df: pd.DataFrame):
-                def _f(x: pd.Series) -> float:  # type: ignore[type-arg]
-                    total = ref_df.loc[x.index, "total_candidatos"].sum()
-                    return float((x * ref_df.loc[x.index, "total_candidatos"]).sum() / total) if total > 0 else 0.0
-                return pd.NamedAgg(column=col, aggfunc=_f)
-
-            pluri_summary = df_pluri_filtered.groupby(["NU_ANO", "TP_DEPENDENCIA_ADM_ESC_DESC"]).agg(
-                total_candidatos=("total_candidatos", "sum"),
-                **{col: _make_pp(col, df_pluri_filtered) for col in _pluri_nota_cols}
-            ).reset_index().sort_values(by="NU_ANO")
+            pluri_metrics = {
+                name: columns
+                for name, columns in available_metrics.items()
+                if set(columns) <= set(df_pluri_filtered.columns)
+            }
+            pluri_summary = weighted_group_summary(
+                df_pluri_filtered,
+                ["NU_ANO", "TP_DEPENDENCIA_ADM_ESC_DESC"],
+                pluri_metrics,
+            ).sort_values(by="NU_ANO")
 
             col_line1, col_line2 = st.columns(2)
             with col_line1:
@@ -254,15 +275,26 @@ def render_rede_view(selected_year, selected_ufs, df_rede, df_rede_plurianual, d
         st.markdown("#### 4️⃣ 🔬 Raio-X Avançado: Impacto Socioeconômico na Escola (`Q006` x `Q007` x Rede)")
         
         if not df_socio_escola.empty:
-            opcoes_redes: list[str] = [str(r) for r in df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique() if r != "Não Informado"]
+            df_socio_filtered = filter_aggregate_frame(
+                df_socio_escola,
+                selected_years,
+                selected_ufs,
+                selected_treineiro_labels,
+            )
+            opcoes_redes: list[str] = [str(r) for r in df_socio_filtered["TP_DEPENDENCIA_ADM_ESC_DESC"].unique() if r != "Não Informado"]
             if not opcoes_redes:
-                opcoes_redes = df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"].unique().tolist()
+                opcoes_redes = df_socio_filtered["TP_DEPENDENCIA_ADM_ESC_DESC"].unique().tolist()
 
+            if not opcoes_redes:
+                st.info("Dados socioeconômicos não disponíveis nos filtros atuais.")
+                return
             selected_rede_filter: str = st.selectbox(  # type: ignore[assignment]
                 "Filtrar por Dependência Administrativa da Escola:",
                 options=opcoes_redes
-            ) or (opcoes_redes[0] if opcoes_redes else "")
-            df_filtered_socio = df_socio_escola[df_socio_escola["TP_DEPENDENCIA_ADM_ESC_DESC"] == selected_rede_filter]
+            ) or opcoes_redes[0]
+            df_filtered_socio = df_socio_filtered[
+                df_socio_filtered["TP_DEPENDENCIA_ADM_ESC_DESC"] == selected_rede_filter
+            ]
             
             fig_socio = px.scatter(
                 df_filtered_socio,

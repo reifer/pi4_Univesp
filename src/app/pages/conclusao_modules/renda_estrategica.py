@@ -1,187 +1,197 @@
-import streamlit as st
 import pandas as pd
-import os
-import plotly.express as px
+import plotly.graph_objects as go
+import streamlit as st
+
+from app.utils.data_loader import get_global_filter_state, load_filtered_aggregate
+
+
+def _income_sort_key(value):
+    value = str(value)
+    return (0, int(value)) if value.isdigit() else (1, value)
+
 
 def render():
     st.markdown("---")
-    
-    # Cabeçalho encapsulado em Container Nativo
     with st.container(border=True):
         st.markdown("### 💰 2. A Renda e a Nota: O Fator Socioeconômico e o Impacto no TRI")
-    
-    anos_opcoes_f2 = ["Plurianual (2021-2025)", 2025, 2024, 2023, 2022, 2021]
-    ano_f2 = st.selectbox(
-        "Selecione o recorte temporal para a análise de Renda Familiar:",
-        anos_opcoes_f2,
-        key="fase2_ano_select"
-    )
-    
-    def carregar_dados_renda(ano):
-        caminho_pasta = f"data/processed/enem_{ano}_agg_notas_renda_parquet"
-        if os.path.exists(caminho_pasta):
-            try:
-                df = pd.read_parquet(caminho_pasta)
-                df["NU_ANO"] = int(ano)
-                return df
-            except Exception as e:
-                return pd.DataFrame()
-        return pd.DataFrame()
 
-    if ano_f2 == "Plurianual (2021-2025)":
-        with st.container(border=True):
-            st.markdown("<strong>📊 Visão Plurianual do Fator Socioeconômico (2021–2025):</strong>", unsafe_allow_html=True)
-            st.markdown("""
-            <ul style="margin-bottom: 0; padding-left: 20px;">
-                <li><strong>A Correlação Direta:</strong> A análise consolidada dos 5 anos comprova que a renda familiar (<code>Q006</code>) opera como uma das variáveis de maior poder preditivo sobre o desempenho no ENEM. O gradiente de notas da TRI cresce de forma estritamente proporcional ao patamar de rendimento declarado.</li>
-            </ul>
-            """, unsafe_allow_html=True)
-        
-        dfs_pluri = []
-        for a in [2021, 2022, 2023, 2024, 2025]:
-            df_temp = carregar_dados_renda(a)
-            if not df_temp.empty:
-                dfs_pluri.append(df_temp)
-                
-        if dfs_pluri:
-            df_pluri_renda = pd.concat(dfs_pluri, ignore_index=True)
-            
-            if "RENDA_FAMILIAR_DESC" in df_pluri_renda.columns and "NU_ANO" in df_pluri_renda.columns:
-                tem_codigo_renda = "RENDA_FAMILIAR_COD" in df_pluri_renda.columns
-                coluna_faixa = "RENDA_FAMILIAR_COD" if tem_codigo_renda else "RENDA_FAMILIAR_DESC"
-                df_pluri_renda[coluna_faixa] = df_pluri_renda[coluna_faixa].astype("string")
-                opcoes_faixas = sorted(df_pluri_renda[coluna_faixa].dropna().unique().tolist())
-                rotulos_faixas = (
-                    df_pluri_renda.sort_values("NU_ANO", ascending=False)
-                    .drop_duplicates(coluna_faixa)
-                    .set_index(coluna_faixa)["RENDA_FAMILIAR_DESC"]
-                    .astype(str)
-                    .to_dict()
-                )
-                indices_iniciais = (
-                    sorted({0, len(opcoes_faixas) // 2, len(opcoes_faixas) - 1})
-                    if opcoes_faixas
-                    else []
-                )
-                faixas_iniciais = [opcoes_faixas[indice] for indice in indices_iniciais]
-                faixas_selecionadas = st.multiselect(
-                    "Faixas de renda para comparar:",
-                    options=opcoes_faixas,
-                    default=faixas_iniciais,
-                    format_func=lambda faixa: rotulos_faixas.get(faixa, faixa),
-                    help="As opções iniciais mostram faixas baixa, intermediária e alta. Selecione poucas faixas para manter o gráfico legível no celular.",
-                    key="fase2_faixas_renda_plurianual",
-                )
-
-                if faixas_selecionadas:
-                    df_grafico_renda = df_pluri_renda[
-                        df_pluri_renda[coluna_faixa].isin(faixas_selecionadas)
-                    ].copy()
-                    chaves_agrupamento = ["NU_ANO", coluna_faixa]
-                    agregacoes: dict[str, tuple[str, str]] = {}
-                    if "total_candidatos" in df_grafico_renda.columns:
-                        agregacoes["total_candidatos"] = ("total_candidatos", "sum")
-                    if "media_geral" in df_grafico_renda.columns:
-                        if "total_candidatos" in df_grafico_renda.columns:
-                            df_grafico_renda["_media_ponderada"] = (
-                                df_grafico_renda["media_geral"] * df_grafico_renda["total_candidatos"]
-                            )
-                            agregacoes["_media_ponderada"] = ("_media_ponderada", "sum")
-                        else:
-                            agregacoes["media_geral"] = ("media_geral", "mean")
-
-                    if agregacoes:
-                        df_grafico_renda = (
-                            df_grafico_renda.groupby(chaves_agrupamento, as_index=False)
-                            .agg(**agregacoes)
-                        )
-                        if "_media_ponderada" in df_grafico_renda.columns:
-                            df_grafico_renda["media_geral"] = (
-                                df_grafico_renda["_media_ponderada"]
-                                .div(df_grafico_renda["total_candidatos"])
-                                .where(df_grafico_renda["total_candidatos"] != 0)
-                            )
-                            df_grafico_renda = df_grafico_renda.drop(columns="_media_ponderada")
-
-                    metrica_pluri = "media_geral" if "media_geral" in df_grafico_renda.columns else "total_candidatos"
-                    rotulo_metrica_pluri = "Média Geral TRI" if metrica_pluri == "media_geral" else "Total de Candidatos"
-                    df_grafico_renda["Faixa de Renda"] = df_grafico_renda[coluna_faixa].map(rotulos_faixas)
-                    with st.container(border=True):
-                        fig_hist = px.line(
-                            df_grafico_renda,
-                            x="NU_ANO",
-                            y=metrica_pluri,
-                            color="Faixa de Renda",
-                            markers=True,
-                            title="Evolução Plurianual do Desempenho por Faixa de Renda",
-                            labels={
-                                "NU_ANO": "Ano do Exame",
-                                metrica_pluri: rotulo_metrica_pluri,
-                                "Faixa de Renda": "Faixa de Renda Familiar",
-                            },
-                            hover_data={coluna_faixa: True},
-                        )
-                        fig_hist.update_layout(
-                            template="plotly_white",
-                            height=400,
-                            margin=dict(l=20, r=15, t=60, b=100),
-                            legend=dict(
-                                orientation="h",
-                                y=-0.22,
-                                x=0.5,
-                                xanchor="center",
-                                yanchor="top",
-                                font=dict(size=9),
-                            ),
-                        )
-                        st.plotly_chart(fig_hist, width="stretch")
-                else:
-                    st.info("Selecione ao menos uma faixa de renda para exibir a comparação.")
+    years, ufs, treineiros = get_global_filter_state()
+    df_renda = load_filtered_aggregate("agg_notas_renda")
+    if df_renda.empty:
+        st.info("Não há dados de renda para os filtros globais atuais.")
     else:
-        df_renda_ano = carregar_dados_renda(ano_f2)
-        if not df_renda_ano.empty:
-            st.success(f"✅ Dados agregados de renda carregados com sucesso para o ENEM {ano_f2}.")
-            
-            desc_col: str | None = "RENDA_FAMILIAR_DESC" if "RENDA_FAMILIAR_DESC" in df_renda_ano.columns else (str(df_renda_ano.columns[1]) if len(df_renda_ano.columns) > 1 else None)
-            nota_col: str | None = "media_mt" if "media_mt" in df_renda_ano.columns else (str(df_renda_ano.columns[2]) if len(df_renda_ano.columns) > 2 else None)
-            
-            if desc_col is not None and nota_col is not None:
-                with st.container(border=True):
-                    fig_renda_ano = px.bar(
-                        df_renda_ano.sort_values(by=desc_col),
-                        x=desc_col, y=nota_col,
-                        color=nota_col, color_continuous_scale="Blues",
-                        title=f"Desempenho Médio em Matemática por Faixa de Renda — ENEM {ano_f2}",
-                        labels={desc_col: "Faixa de Renda Familiar (Q006)", nota_col: "Nota Média (TRI)"}
-                    )
-                    fig_renda_ano.update_layout(
-                        template="plotly_white", 
-                        height=420, 
-                        coloraxis_showscale=False,
-                        margin=dict(l=20, r=20, t=50, b=20),
-                        xaxis=dict(tickangle=-30, tickfont=dict(size=10), automargin=True)
-                    )
-                    st.plotly_chart(fig_renda_ano, use_container_width=True)
-        else:
-            st.warning(f"⚠️ Dados de renda para o ano {ano_f2} não encontrados na pasta de processados.")
+        code_column = (
+            "RENDA_FAMILIAR_COD"
+            if "RENDA_FAMILIAR_COD" in df_renda.columns
+            else "Q006"
+        )
+        description_column = (
+            "RENDA_FAMILIAR_DESC"
+            if "RENDA_FAMILIAR_DESC" in df_renda.columns
+            else "Q006_DESC"
+        )
+        sum_column = "soma_notas_mt"
+        count_column = "total_notas_mt"
+        if not {code_column, description_column, sum_column, count_column} <= set(df_renda):
+            st.error("O agregado de renda não contém as colunas necessárias para a média ponderada.")
+            return
 
-    # Colunas finais estruturadas com Containers Nativos
-    col_critica_f2, col_proposta_f2 = st.columns(2)
-    with col_critica_f2:
+        df_renda = df_renda.copy()
+        df_renda[code_column] = df_renda[code_column].astype("string")
+        descriptions = (
+            df_renda.sort_values("NU_ANO", ascending=False)
+            .drop_duplicates(code_column)
+            .set_index(code_column)[description_column]
+            .astype(str)
+            .to_dict()
+        )
+        df_renda["Faixa de renda"] = (
+            df_renda[description_column].fillna("Não Informado").astype(str)
+        )
+        summary = (
+            df_renda.groupby(
+                ["NU_ANO", code_column, "Faixa de renda"],
+                as_index=False,
+                dropna=False,
+            )
+            .agg(
+                soma_notas_mt=(sum_column, "sum"),
+                total_notas_mt=(count_column, "sum"),
+                total_candidatos=("total_candidatos", "sum"),
+            )
+        )
+        summary["Média de Matemática"] = (
+            summary["soma_notas_mt"]
+            .div(summary["total_notas_mt"])
+            .where(summary["total_notas_mt"] > 0)
+        )
+        income_order = sorted(
+            summary[code_column].dropna().unique(),
+            key=_income_sort_key,
+        )
+        summary[code_column] = pd.Categorical(
+            summary[code_column],
+            categories=income_order,
+            ordered=True,
+        )
+        summary = summary.sort_values(["NU_ANO", code_column])
+
+        with st.container(border=True):
+            st.markdown(
+                f"Recorte global: ENEM {', '.join(map(str, years))}; "
+                f"UFs {', '.join(ufs)}; candidatos {', '.join(treineiros)}."
+            )
+            heatmap_summary = summary.copy()
+            heatmap_summary[code_column] = heatmap_summary[code_column].astype(str)
+            heatmap_summary["Ano do ENEM"] = (
+                heatmap_summary["NU_ANO"].astype(int).astype(str)
+            )
+            year_order = [
+                str(year) for year in sorted(heatmap_summary["NU_ANO"].astype(int).unique())
+            ]
+            income_codes = sorted(
+                heatmap_summary[code_column].dropna().unique(),
+                key=_income_sort_key,
+            )
+            income_labels = [
+                f"{code} — {descriptions.get(code, 'Não Informado')}"
+                for code in income_codes
+            ]
+            score_matrix = (
+                heatmap_summary.pivot(
+                    index=code_column,
+                    columns="Ano do ENEM",
+                    values="Média de Matemática",
+                )
+                .reindex(index=income_codes, columns=year_order)
+            )
+            detail_lookup = heatmap_summary.set_index(
+                [code_column, "Ano do ENEM"]
+            ).to_dict("index")
+            customdata = [
+                [
+                    [
+                        detail_lookup.get((code, year), {}).get(
+                            "Faixa de renda", "Sem dados"
+                        ),
+                        int(
+                            detail_lookup.get((code, year), {}).get(
+                                "total_notas_mt", 0
+                            )
+                        ),
+                    ]
+                    for year in year_order
+                ]
+                for code in income_codes
+            ]
+            fig = go.Figure(
+                data=go.Heatmap(
+                    x=year_order,
+                    y=income_labels,
+                    z=score_matrix.to_numpy(),
+                    customdata=customdata,
+                    colorscale="Viridis",
+                    colorbar=dict(title="Média TRI", thickness=12),
+                    xgap=2,
+                    ygap=2,
+                    hoverongaps=False,
+                    hovertemplate=(
+                        "Ano: %{x}<br>"
+                        "Faixa de renda: %{y}<br>"
+                        "Descrição da edição: %{customdata[0]}<br>"
+                        "Média de Matemática: %{z:.2f}<br>"
+                        "Total de notas válidas: %{customdata[1]:,}"
+                        "<extra></extra>"
+                    ),
+                )
+            )
+            fig.update_layout(
+                template="plotly_white",
+                title="Média de Matemática por faixa de renda e ano",
+                height=max(500, 30 * len(income_labels) + 150),
+                margin=dict(l=20, r=20, t=60, b=40),
+                xaxis=dict(
+                    title="Ano do ENEM",
+                    type="category",
+                    categoryorder="array",
+                    categoryarray=year_order,
+                ),
+                yaxis=dict(
+                    title="Faixa de renda familiar",
+                    type="category",
+                    categoryorder="array",
+                    categoryarray=income_labels,
+                    autorange=True,
+                    tickfont=dict(size=10),
+                    automargin=True,
+                ),
+            )
+            st.plotly_chart(fig, width="stretch")
+            if any(year in (2024, 2025) for year in years):
+                st.info(
+                    "**Nota metodológica — comparabilidade das faixas:** em 2024 e 2025, "
+                    "a renda familiar passou a ser identificada pela questão Q007; nas "
+                    "edições anteriores, era registrada pela Q006. A mudança estrutural "
+                    "redefiniu as faixas e exige cautela na comparação direta entre "
+                    "edições. A aproximação das médias em 2024–2025 está presente nos "
+                    "dados observados, mas não se deve concluir que a troca de questão, "
+                    "por si só, a causou."
+                )
+
+    col_critica, col_proposta = st.columns(2)
+    with col_critica:
         with st.container(border=True):
             st.markdown("#### 🔍 Análise Crítica do Fator Socioeconômico")
-            st.markdown("""
-            <p style="margin-bottom: 0; font-size: 0.92rem; color: #334155;">
-            A dependência entre o capital econômico familiar e o sucesso acadêmico escancara a <strong>reprodutibilidade das desigualdades sociais</strong>. Alunos inseridos nas faixas de menor renda enfrentam barreiras materiais cumulativas, como a necessidade precoce de inserção no mercado de trabalho (<code>Q007</code>), o que reduz drasticamente o tempo dedicado aos estudos extracurriculares.
-            </p>
-            """, unsafe_allow_html=True)
-        
-    with col_proposta_f2:
+            st.markdown(
+                "A relação entre renda familiar e desempenho deve ser interpretada como "
+                "associação, não causalidade. O recorte atual permite comparar as faixas "
+                "entre os anos, estados e tipos de candidato selecionados."
+            )
+    with col_proposta:
         with st.container(border=True):
             st.markdown("#### 🚀 Proposta de Intervenção Baseada em Evidências")
-            st.markdown("""
-            <ul style="margin-bottom: 0; padding-left: 18px; font-size: 0.92rem; color: #334155;">
-                <li><strong>Políticas de Assistência Estudantil Ampliadas:</strong> Bolsas de permanência e suporte digital direto para estudantes de baixa renda do ensino médio regular.</li>
-                <li><strong>Plataformas Públicas de Apoio Adaptativo:</strong> Democratização de cursinhos preparatórios de alto nível impulsionados por Inteligência Artificial para nivelamento de oportunidades.</li>
-            </ul>
-            """, unsafe_allow_html=True)
+            st.markdown(
+                "Políticas de assistência estudantil e apoio pedagógico podem priorizar "
+                "estudantes em situação de vulnerabilidade, acompanhando resultados em "
+                "cada recorte local."
+            )
