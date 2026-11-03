@@ -23,6 +23,15 @@ AVAILABLE_YEARS = [2021, 2022, 2023, 2024, 2025]
 TREINEIRO_LABELS = ["Não Treineiro", "Treineiro"]
 
 
+REGIOES_BR = {
+    "Sudeste": ["ES", "MG", "RJ", "SP"],
+    "Sul": ["PR", "RS", "SC"],
+    "Nordeste": ["AL", "BA", "CE", "MA", "PB", "PE", "PI", "RN", "SE"],
+    "Centro-Oeste": ["DF", "GO", "MS", "MT"],
+    "Norte": ["AC", "AM", "AP", "PA", "RO", "RR", "TO"],
+}
+
+
 def _apply_year_preset() -> None:
     preset = st.session_state["year_preset"]
     if preset == "Ano mais recente":
@@ -33,6 +42,28 @@ def _apply_year_preset() -> None:
 
 def _mark_years_as_custom() -> None:
     st.session_state["year_preset"] = "Personalizado"
+
+
+def _apply_uf_preset(available_ufs: list[str]) -> None:
+    preset = st.session_state.get("uf_preset", "Brasil (Todos)")
+    if preset == "Brasil (Todos)":
+        st.session_state["filter_ufs"] = available_ufs.copy()
+    elif preset == "Por Região":
+        regiao = st.session_state.get("selected_region", "Sudeste")
+        st.session_state["filter_ufs"] = [
+            uf for uf in REGIOES_BR.get(regiao, []) if uf in available_ufs
+        ]
+
+
+def _apply_region_change(available_ufs: list[str]) -> None:
+    regiao = st.session_state.get("selected_region", "Sudeste")
+    st.session_state["filter_ufs"] = [
+        uf for uf in REGIOES_BR.get(regiao, []) if uf in available_ufs
+    ]
+
+
+def _mark_ufs_as_custom() -> None:
+    st.session_state["uf_preset"] = "Personalizado"
 
 
 # Configuração inicial da página (Layout Wide & Sidebar Oculta)
@@ -59,20 +90,133 @@ st.markdown("""
         display: none !important;
     }
     
-    /* Força o multiselect a se comportar como um combobox compacto com scroll interno restrito */
-    div[data-baseweb="select"] > div:first-child {
+    /* Combobox compacto com scroll horizontal limpo e alinhado */
+    div[data-baseweb="select"] > div:first-child,
+    [data-testid="stMultiSelectTagsContainer"] {
         max-height: 42px !important;
-        overflow-y: auto !important;
+        min-height: 40px !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
         flex-wrap: nowrap !important;
+        scrollbar-width: thin !important;
+        gap: 4px !important;
+        align-items: center !important;
     }
     
-    /* Esconde as pílulas gigantes e otimiza o espaço no mobile */
-    div[data-baseweb="tag"] {
-        transform: scale(0.9);
-        margin: 1px !important;
+    /* Garante que cada tag de UF mantenha seu tamanho natural, sem ser esmagada no flexbox */
+    div[data-baseweb="tag"],
+    [data-testid="stMultiSelectTagsContainer"] [data-tag] {
+        flex: 0 0 auto !important;
+        flex-shrink: 0 !important;
+        min-width: max-content !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        background-color: #2563EB !important;
+        color: #FFFFFF !important;
+        padding: 3px 8px !important;
+        border-radius: 6px !important;
+        margin: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Rótulo de texto da UF (sigla do estado) visível, destacado e nítido */
+    div[data-baseweb="tag"] span,
+    [data-testid="stMultiSelectTagsContainer"] [data-tag] span {
+        color: #FFFFFF !important;
+        font-size: 0.85rem !important;
+        font-weight: 700 !important;
+        line-height: 1 !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        display: inline-block !important;
+        visibility: visible !important;
+    }
+
+    /* Botão de remoção (ícone 'x') dentro da tag */
+    [data-testid="stMultiSelectTagsContainer"] [data-tag] button {
+        color: #FFFFFF !important;
+        margin-left: 5px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        cursor: pointer !important;
+        opacity: 0.85;
+    }
+    [data-testid="stMultiSelectTagsContainer"] [data-tag] button:hover {
+        opacity: 1;
     }
 </style>
 """, unsafe_allow_html=True)
+
+# --- MITIGAÇÃO REFINADA DE AUTO-ADIÇÃO POR ENTER/IR NO MULTISELECT ---
+st.html("""
+<script>
+(function() {
+    function isMultiselectInput(el) {
+        if (!el || el.tagName !== 'INPUT') return false;
+        return !!(
+            el.matches('[data-testid="stMultiSelect"] input, [data-testid="stMultiSelectTagsContainer"] input, input[role="combobox"], div[data-baseweb="select"] input') ||
+            el.closest('[data-testid="stMultiSelect"], [data-testid="stMultiSelectTagsContainer"], div[data-baseweb="select"]')
+        );
+    }
+
+    function interceptEnterIfEmpty(e, inputEl) {
+        const isEnter = e.key === 'Enter' || e.keyCode === 13 || e.which === 13;
+        if (!isEnter) return;
+
+        const val = inputEl && inputEl.value ? inputEl.value.trim() : '';
+        if (val === '') {
+            // Previne a auto-adição indesejada e fecha dropdown/teclado virtual
+            e.preventDefault();
+            e.stopPropagation();
+            if (e.stopImmediatePropagation) {
+                e.stopImmediatePropagation();
+            }
+            if (inputEl && typeof inputEl.blur === 'function') {
+                inputEl.blur();
+            }
+        }
+    }
+
+    function attachDirectListener(input) {
+        if (!input || input.__enterMitigationAttached) return;
+        input.__enterMitigationAttached = true;
+
+        input.addEventListener('keydown', function(e) {
+            interceptEnterIfEmpty(e, input);
+        }, true);
+    }
+
+    function bindAllMultiselectInputs() {
+        const selector = '[data-testid="stMultiSelect"] input, [data-testid="stMultiSelectTagsContainer"] input, input[role="combobox"], div[data-baseweb="select"] input';
+        const inputs = document.querySelectorAll(selector);
+        inputs.forEach(attachDirectListener);
+    }
+
+    // 1. Ouvinte global em fase de captura para interceptação precoce
+    if (!window.__multiselectGlobalCaptureAttached) {
+        window.__multiselectGlobalCaptureAttached = true;
+        window.addEventListener('keydown', function(e) {
+            const target = e.target || document.activeElement;
+            if (isMultiselectInput(target)) {
+                interceptEnterIfEmpty(e, target);
+            }
+        }, true);
+    }
+
+    // 2. Vinculação direta nos elementos e MutationObserver para reruns do Streamlit
+    bindAllMultiselectInputs();
+    if (!window.__multiselectObserverAttached) {
+        window.__multiselectObserverAttached = true;
+        const observer = new MutationObserver(bindAllMultiselectInputs);
+        observer.observe(document.body || document.documentElement, {
+            childList: true,
+            subtree: true
+        });
+    }
+})();
+</script>
+""", unsafe_allow_javascript=True)
 
 try:
     # --- CABEÇALHO PRINCIPAL INSTITUCIONAL ---
@@ -121,18 +265,38 @@ try:
     selected_year = ", ".join(str(year) for year in selected_years)
 
     all_ufs = sorted(df_notas_uf["SG_UF_PROVA"].dropna().unique().tolist())
+    st.session_state.setdefault("uf_preset", "Brasil (Todos)")
+    st.session_state.setdefault("selected_region", "Sudeste")
     st.session_state.setdefault("filter_ufs", all_ufs)
     st.session_state["filter_ufs"] = [
         uf for uf in st.session_state["filter_ufs"] if uf in all_ufs
     ]
     st.session_state.setdefault("filter_treineiro", TREINEIRO_LABELS.copy())
 
-    col_ufs, col_treineiro = st.columns([3, 2])
+    col_preset_uf, col_ufs, col_treineiro = st.columns([1, 2, 1])
+    with col_preset_uf:
+        st.segmented_control(
+            "Recorte geográfico",
+            options=["Brasil (Todos)", "Por Região", "Personalizado"],
+            key="uf_preset",
+            on_change=_apply_uf_preset,
+            args=(all_ufs,),
+        )
+        if st.session_state.get("uf_preset") == "Por Região":
+            st.pills(
+                "Região",
+                options=list(REGIOES_BR.keys()),
+                key="selected_region",
+                on_change=_apply_region_change,
+                args=(all_ufs,),
+            )
     with col_ufs:
         st.multiselect(
             "📍 Selecione as UFs (Estados)",
             options=all_ufs,
             key="filter_ufs",
+            on_change=_mark_ufs_as_custom,
+            placeholder="Selecione ou busque UFs...",
         )
     with col_treineiro:
         st.pills(

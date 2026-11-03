@@ -49,13 +49,18 @@ def apply_custom_css():
             border: 1px solid #CBD5E1 !important;
             border-radius: 8px !important;
         }
-        span[data-baseweb="tag"] {
+        span[data-baseweb="tag"],
+        div[data-tag],
+        [data-testid="stMultiSelectTagsContainer"] [data-tag] {
             background-color: #2563EB !important;
             border-radius: 6px !important;
-        }
-        span[data-baseweb="tag"] span {
             color: #FFFFFF !important;
-            font-weight: 600 !important;
+        }
+        span[data-baseweb="tag"] span,
+        div[data-tag] span,
+        [data-testid="stMultiSelectTagsContainer"] [data-tag] span {
+            color: #FFFFFF !important;
+            font-weight: 700 !important;
         }
         
         /* Ajuste de compatibilidade para os st.container(border=True) nativos */
