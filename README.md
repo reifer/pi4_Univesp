@@ -1,218 +1,158 @@
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        # ENEM Analytics & AI — Dashboard Plurianual (PI4 Univesp)
+# ENEM Analytics & AI — Projeto Integrador IV (UNIVESP)
 
-## Visão Geral do Projeto
+## Sobre o projeto
 
-Este projeto é um **dashboard analítico interativo** para exploração dos microdados do ENEM ao longo de uma série histórica plurianual (2021–2025). A aplicação combina um pipeline de dados em **PySpark** (ingestão, limpeza, enriquecimento e agregações) com uma camada de **Machine Learning** para identificação de perfil de treineiros, e uma interface web construída em **Streamlit** com visualizações interativas em **Plotly**.
+O ENEM Analytics & AI é um dashboard interativo para explorar os microdados do Exame Nacional do Ensino Médio (ENEM), divulgados pelo INEP, entre 2021 e 2025. O projeto organiza indicadores de participação, desempenho e perfil socioeconômico em módulos analíticos, com o objetivo de apoiar gestores, pesquisadores e demais interessados na análise da série histórica.
 
-A arquitetura é composta por três camadas independentes, coordenadas por um orquestrador mestre:
+A aplicação combina processamento distribuído com PySpark, armazenamento de dados em Apache Parquet, análises em Pandas, um modelo de referência de Machine Learning e visualizações em Streamlit e Plotly.
 
-1. **Pipeline de Dados** (`src/data_pipeline/`): o orquestrador mestre (`ingest_all.py`) controla a execução ponta a ponta, em etapas isoladas e sequenciais, da ingestão, limpeza, transformação e agregação dos microdados brutos em arquivos Parquet otimizados, processados via PySpark.
-2. **Dashboard Streamlit** (`src/app/`): camada de visualização, escrita em Pandas/Plotly, que consome os Parquets processados. O layout foi totalmente migrado para **containers nativos do Streamlit** (`st.container(border=True)`), garantindo consistência visual sem depender de HTML/CSS customizado para agrupamento de conteúdo.
-3. **Modelos de ML** (`src/data_pipeline/report_or_ml.py`): treinamento de um classificador (Regressão Logística via PySpark ML) e exportação de métricas/insights em JSON (`data/processed/enem_*_ml_insights.json`), consumidos pela aba de Machine Learning do dashboard.
+## Arquitetura e engenharia de dados
 
-O `ingest_all.py` funciona exclusivamente como controlador/dispatcher: executa a ingestão e limpeza, aguarda seu sucesso, aciona `transform.py`, aguarda novamente e então aciona `report_or_ml.py`. As fases posteriores são executadas por subprocessos com validação de status (`check=True`), reduzindo o risco de estouro de memória e interrompendo o fluxo imediatamente em caso de falha. O encerramento de cada etapa e do pipeline completo é sinalizado com status `[OK]` ou `[NOK]`.
+O pipeline processa os dados separadamente por ano:
 
-O projeto também conta com uma **suíte de testes automatizados (Pytest)**, cobrindo pipeline de dados, artefatos de ML e a importabilidade das views do dashboard, e é **verificado estaticamente com Pyright** para tipagem, sem depender de containers Docker em tempo de execução (execução via interpretador Python local/`.venv`).
+1. **Ingestão dos arquivos brutos**
+   - Para 2021–2023, o pipeline lê um CSV único por ano (`MICRODADOS_ENEM_{ano}.csv`).
+   - Para 2024–2025, lê os arquivos de participantes e resultados em separado. O código associa os registros por índices sequenciais gerados separadamente no Spark e seleciona campos para formar uma base padronizada.
+2. **Padronização e transformação**
+   - Os dados são gravados em Parquet e enriquecidos com dimensões como ano, UF e descrições categóricas.
+   - O pipeline gera agregações por tema, entre elas notas por UF, notas por renda, rede de ensino, demografia, renda por raça/cor e perfil socioeconômico por escola.
+   - Nas agregações de notas, são armazenados somatórios e contagens para recompor médias ponderadas sem calcular uma média simples das médias.
+   - As gravações das agregações configuram compressão Zstandard.
+3. **Consumo pelo dashboard**
+   - O carregador lê apenas os agregados dos anos selecionados, concatena-os em Pandas e mantém os dados em cache.
+   - Os filtros de ano, UF e tipo de candidato são aplicados às agregações usadas pelos módulos analíticos.
 
----
+### Observação sobre a associação dos arquivos de 2024–2025
 
-## Tratativa de Dados Plurianuais (2021–2025)
+O vínculo entre participantes e resultados é feito por índices sequenciais gerados separadamente para cada arquivo, não por uma chave explícita de inscrição. A associação, portanto, pressupõe que os registros mantenham ordenação compatível nos arquivos de origem. Essa premissa deve ser verificada em relação aos dados oficiais antes de interpretar o vínculo como garantia de correspondência individual.
 
-O pipeline resolve as mudanças de formato do INEP ao longo dos anos:
+### Etapas do pipeline
 
-- **2021 a 2023 (Arquivo Único):** Microdados lidos de `MICRODADOS_ENEM_{ano}.csv`. Schema padronizado e salvo em Parquet.
-- **2024 a 2025 (Arquivos Fragmentados):** O INEP dividiu os dados em `PARTICIPANTES_{ano}.csv` e `RESULTADOS_{ano}.csv`. O pipeline realiza o *join* por índice sequencial, reconstrói a base completa e padroniza o schema longitudinal.
+O ponto de entrada do fluxo é `src/data_pipeline/ingest_all.py`. Ele executa a ingestão, aciona a transformação e, em seguida, a geração dos insights de Machine Learning por subprocessos. O processo é interrompido se uma dessas etapas falhar.
 
----
+A rotina `src/data_pipeline/clean.py` existe separadamente, mas não é chamada pelo orquestrador plurianual atual. Assim, as operações de limpeza descritas nesse arquivo não são apresentadas como etapa efetivamente executada no fluxo completo.
 
-## Stack Tecnológica
+## Módulo de Machine Learning
 
-| Categoria | Tecnologias |
+O projeto inclui um modelo de referência de classificação baseado em **Regressão Logística do PySpark ML**, com `IN_TREINEIRO` como variável-alvo. O treinamento usa uma amostra de 10% dos dados de 2025, dividida em conjuntos de treino e teste na proporção de 80/20, com semente fixa.
+
+As variáveis preditoras incluem faixa etária, sexo, raça/cor, situação de conclusão do Ensino Médio e variáveis socioeconômicas. As métricas são calculadas no conjunto de teste e registradas em `data/processed/enem_2025_ml_insights.json`.
+
+O artefato de insights presente no workspace registra:
+
+| Métrica | Valor registrado |
+|---|---:|
+| Acurácia | 0,9817 (~98,17%) |
+| ROC AUC | 0,9821 |
+| PR AUC | 0,8269 |
+| F1-Score | 0,9820 |
+
+Esses valores descrevem o artefato de referência de 2025; não são métricas recalculadas para cada ano ou para toda a série histórica. O dashboard informa essa limitação quando a seleção inclui outros anos. O fluxo gera um relatório JSON com métricas e informações resumidas; não há evidência de persistência de um modelo treinado para inferência em produção. O gráfico de importância de variáveis só é exibido caso o JSON contenha esse campo; ele não está presente no artefato atual.
+
+## Interface e módulos analíticos
+
+A interface é construída em Streamlit, com gráficos interativos em Plotly. A navegação entre módulos é feita por `st.pills` no corpo principal da página. Os filtros globais permitem selecionar anos, UFs ou regiões e tipos de candidato.
+
+- **Panorama Geográfico:** distribuição de inscritos por UF e distribuição por sexo.
+- **Perfil Socioeconômico:** distribuição dos candidatos por faixa de renda familiar.
+- **Redes de Ensino:** volumetria e desempenho por dependência administrativa, com recortes por ano, UF e tipo de candidato.
+- **Desempenho TRI:** médias das notas por área e UF, calculadas a partir de somatórios e contagens.
+- **Machine Learning:** métricas do modelo de referência e aviso de contexto quando o recorte selecionado não corresponde ao ano do modelo.
+- **Geopolítica:** comparativos de desempenho por macrorregião e evolução temporal. O módulo apresenta gráficos regionais e séries históricas; não é um mapa temático.
+- **Conclusão Estratégica:** síntese analítica com subseções sobre rede de ensino, renda, raça/cor, trabalho, demografia e visão consolidada.
+
+## Stack tecnológica
+
+| Área | Tecnologias e componentes |
 |---|---|
-| **Linguagem / Ambiente** | Python 3.12+, ambiente virtual (`.venv`) |
-| **Processamento de Dados** | PySpark (Spark SQL, Spark ML), Pandas, PyArrow |
-| **Machine Learning** | PySpark ML (`StringIndexer`, `VectorAssembler`, `LogisticRegression`, avaliadores binário/multiclasse) |
-| **Dashboard Web** | Streamlit, com layout nativo via `st.container(border=True)` e `st.expander` |
-| **Visualização de Dados** | Plotly Express & Plotly Graph Objects |
-| **Formato de Dados** | Apache Parquet (armazenamento colunar dos dados processados) |
-| **Testes Automatizados** | Pytest |
-| **Tipagem Estática** | Pyright (configurado em `pyrightconfig.json`) |
-| **Infraestrutura** | Execução local via interpretador Python/`.venv` (sem Docker em runtime) |
+| Linguagem | Python |
+| Processamento de dados | PySpark e Spark SQL |
+| Machine Learning | PySpark ML |
+| Análise e leitura de dados | Pandas e PyArrow |
+| Armazenamento processado | Apache Parquet; compressão Zstandard configurada para as agregações |
+| Dashboard | Streamlit |
+| Visualização | Plotly Express e Plotly Graph Objects |
+| Testes | Pytest |
+| Análise estática | Pyright |
+| Dependência de sistema para Spark | Java, declarada em `packages.txt` |
+| Containerização | Dockerfile baseado em imagem Python slim |
 
----
+## Testes e qualidade de software
 
-## Estrutura de Diretórios
+A suíte contém **53 casos de teste**, que cobrem, entre outros aspectos:
 
-```text
-my-data-project/
-├── data/
-│   ├── dictionary/                        # Dicionários JSON dos microdados (enem_{ano}_dict.json)
-│   ├── raw/                               # Dados brutos CSV baixados do INEP
-│   └── processed/                         # Agregados Parquet gerados pelo pipeline
-│       ├── enem_{ano}_cleaned_parquet/
-│       ├── enem_{ano}_enriched_parquet/
-│       ├── enem_{ano}_agg_notas_uf_parquet/
-│       ├── enem_{ano}_agg_notas_renda_parquet/
-│       ├── enem_{ano}_agg_rede_ensino_parquet/
-│       ├── enem_{ano}_agg_socio_escola_parquet/
-│       ├── enem_{ano}_agg_demografia_parquet/
-│       ├── enem_{ano}_agg_renda_raca_parquet/
-│       └── enem_{ano}_ml_insights.json
-├── notebooks/                              # Notebooks Jupyter para exploração exploratória
-├── src/
-│   ├── app/                                # Dashboard Streamlit
-│   │   ├── dashboard.py                    # Ponto de entrada principal (streamlit run)
-│   │   ├── config/
-│   │   │   └── settings.py                 # Paleta de cores, CSS global e apply_custom_css()
-│   │   ├── components/                     # Módulos de visualização por tema
-│   │   │   ├── desempenho_view.py
-│   │   │   ├── geo_view.py
-│   │   │   ├── geopolitica_view.py
-│   │   │   ├── ml_view.py
-│   │   │   ├── rede_view.py
-│   │   │   └── socio_view.py
-│   │   ├── pages/
-│   │   │   ├── conclusao_estrategica.py    # Orquestrador da aba de conclusão
-│   │   │   └── conclusao_modules/          # Módulos da análise estratégica
-│   │   │       ├── rede_estrategica.py
-│   │   │       ├── renda_estrategica.py
-│   │   │       ├── raca_estrategica.py
-│   │   │       ├── trabalho_estrategica.py
-│   │   │       ├── demografia_estrategica.py
-│   │   │       └── sintese_estrategica.py
-│   │   └── utils/
-│   │       └── data_loader.py              # Carregamento cacheado (st.cache_data) de todos os Parquets
-│   └── data_pipeline/                      # Pipeline de ingestão e transformação (PySpark)
-│       ├── ingest_all.py                   # Orquestrador mestre/dispatcher do pipeline completo via subprocessos
-│       ├── downloader.py                   # Download e indexação sequencial dos CSVs do INEP
-│       ├── parser.py                       # Leitura e padronização dos CSVs brutos
-│       ├── clean.py                        # Limpeza e tratamento de nulos
-│       ├── transform.py                    # Geração dos agregados por tema
-│       ├── extract_dictionary.py           # Geração do dicionário JSON de variáveis
-│       └── report_or_ml.py                 # Treinamento do modelo preditivo e export JSON
-├── tests/                                  # Suíte de testes automatizados (Pytest)
-│   ├── test_data_pipeline.py               # Valida estrutura e integridade dos Parquets processados
-│   ├── test_ml.py                          # Valida artefatos e métricas de Machine Learning
-│   └── test_views.py                       # Valida importabilidade das views do dashboard
-├── .streamlit/
-│   └── config.toml                         # Tema e configurações do servidor Streamlit
-├── .vscode/
-│   └── settings.json                       # Intérprete, perfil de terminal e excludes do explorer
-├── pyrightconfig.json                      # Configuração do verificador de tipos estático Pyright
-├── requirements.txt                        # Dependências Python do projeto
-├── packages.txt                            # Dependências de sistema (ex: Java, para PySpark)
-├── TASK.md                                 # Plano mestre de tarefas do projeto
-└── README.md                               # Documentação principal
-```
+- dimensões, contagens e médias ponderadas das agregações Parquet;
+- cálculo e filtragem de dados no carregador;
+- estado dos filtros e renderização dos módulos do dashboard;
+- estrutura dos artefatos JSON de Machine Learning.
 
-> Diretórios virtuais/temporários (`.venv/`, `venv/`, `__pycache__/`, `.pytest_cache/`, `.git/`, `data/tmp_spill/`) foram omitidos da árvore acima por não fazerem parte da arquitetura lógica do projeto.
-
----
-
-## Pré-requisitos e Configuração
-
-Você precisará de **Python 3.12+** instalado no sistema. O **Java** é necessário apenas para executar o pipeline PySpark (veja `packages.txt`). Não há dependência de Docker: toda a stack roda diretamente via interpretador Python local.
-
-### 1. Acesse o diretório do projeto
+Na execução auditada no workspace, **53 testes passaram**. Para executar a suíte:
 
 ```bash
-cd my-data-project
+python -m pytest -q
 ```
 
-### 2. Crie e ative um ambiente virtual
+O Pyright está configurado para analisar `src/`, com a versão de linguagem definida em `pyrightconfig.json`. Na auditoria do workspace, a execução reportou **66 erros de tipagem**. Portanto, a verificação estática está configurada, mas o código não deve ser descrito como livre de erros Pyright até que os diagnósticos sejam resolvidos.
+
+O workflow disponível em `.github/workflows/ci_cd.yml` instala dependências, mas não executa Pytest nem Pyright. Os resultados de testes acima correspondem à execução local auditada, não a uma validação automatizada demonstrada pelo workflow. Pytest e Pyright também não estão listados em `requirements.txt`.
+
+## Como executar
+
+### Pré-requisitos
+
+- Python compatível com as dependências do projeto;
+- Java para executar as etapas PySpark;
+- dados brutos disponíveis em `data/raw/` com os nomes esperados pelo pipeline.
+
+As configurações atuais divergem quanto à versão Python: `pyrightconfig.json` indica 3.12, o Dockerfile usa Python 3.11 e o workflow do GitHub Actions configura Python 3.14. Recomenda-se harmonizar essas versões antes de declarar uma versão única oficialmente suportada.
+
+### Preparar o ambiente local
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-```
-
-> **Nota:** O arquivo `.vscode/settings.json` já está configurado para ativar automaticamente o `.venv` em terminais integrados do VS Code.
-
-### 3. Instale as dependências
-
-```bash
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
----
-
-## Guia de Execução
-
-### Etapa 1 — Executar o Pipeline Completo
-
-Antes de iniciar o dashboard, certifique-se de que os dados brutos estão em `data/raw/` com a nomenclatura correta (ex: `MICRODADOS_ENEM_2021.csv`, `PARTICIPANTES_2024.csv`, `RESULTADOS_2024.csv`).
-
-Todo o pipeline plurianual (2021–2025) é executado de ponta a ponta por um único comando centralizado. O orquestrador processa sequencialmente:
-
-1. a ingestão e limpeza, cobrindo os anos legados de 2021–2023 e a unificação dos arquivos fragmentados de 2024–2025;
-2. a transformação e geração das agregações em `transform.py`;
-3. a geração do relatório e dos artefatos de Machine Learning em `report_or_ml.py`.
-
-Cada subprocesso precisa retornar com sucesso antes que a próxima fase seja iniciada. Em caso de falha, o orquestrador encerra o fluxo com uma mensagem crítica `[NOK]`; ao final, informa o status completo `[OK]`.
-
-Para executar:
+Pytest e Pyright são ferramentas de desenvolvimento e não estão listados em `requirements.txt`. Instale-os no ambiente, se ainda não estiverem disponíveis:
 
 ```bash
-# Com o ambiente virtual ativado:
-python3 src/data_pipeline/ingest_all.py
+pip install pytest pyright
 ```
 
-O uso de fases isoladas e subprocessos controlados permite liberar recursos entre as etapas e reduzir o risco de estouro de RAM. Os arquivos agregados Parquet e os insights de ML serão gerados em `data/processed/`.
+### Executar o pipeline
 
-### Etapa 2 — Iniciar o Dashboard
+Com os arquivos brutos presentes em `data/raw/`:
+
+```bash
+python src/data_pipeline/ingest_all.py
+```
+
+O pipeline grava dados intermediários e agregações em `data/processed/`. A execução completa requer recursos compatíveis com o processamento dos microdados via Spark.
+
+### Iniciar o dashboard
+
+Com os agregados necessários já gerados:
 
 ```bash
 streamlit run src/app/dashboard.py
 ```
 
-O dashboard será aberto automaticamente no navegador padrão em `http://localhost:8501`.
-
----
-
-## Suíte de Testes Automatizados (Pytest)
-
-O projeto conta com uma suíte de **13 testes automatizados** organizados em três módulos dentro de `tests/`, cobrindo os três pilares da aplicação:
-
-| Arquivo | Cobertura |
-|---|---|
-| `tests/test_data_pipeline.py` | Existência do diretório de dados processados e integridade estrutural dos Parquets de rede de ensino para cada ano (2021–2025), além da lógica de agrupamento de faixas de renda. |
-| `tests/test_ml.py` | Existência dos artefatos/diretórios de Machine Learning e validação estrutural do JSON de insights (`enem_*_ml_insights.json`), incluindo ranges lógicos de métricas (acurácia, AUC, F1-Score). |
-| `tests/test_views.py` | Importabilidade sem erros de todos os módulos de visualização (`src/app/components/`) e dos módulos estratégicos de conclusão (`src/app/pages/conclusao_modules/`). |
-
-### Como executar os testes
-
-Com o ambiente virtual ativado e as dependências instaladas:
+### Executar testes e análise estática
 
 ```bash
-python -m pytest tests/ -v
-```
-
-Resultado esperado: **13 passed** (100% de sucesso).
-
-Para checar a tipagem estática do código-fonte (Pyright), rode:
-
-```bash
+python -m pytest -q
 python -m pyright
 ```
 
----
+## Docker e execução em nuvem
 
-## Módulos do Dashboard
+O `Dockerfile` instala Java e as dependências Python, copia o projeto para a imagem e configura o Streamlit para escutar na porta `8501`. Para construir e iniciar o container:
 
-| Módulo | Descrição |
-|---|---|
-| 📊 Panorama Geográfico | Distribuição de inscritos por UF e gênero |
-| 💰 Perfil Socioeconômico | Distribuição por faixa de renda familiar (Q006) |
-| 🏫 Redes de Ensino | Desempenho e volumetria por dependência administrativa |
-| 📈 Desempenho TRI | Notas médias por área de conhecimento e UF |
-| 🤖 Machine Learning | Métricas do modelo preditivo e features importantes |
-| 🌎 Geopolítica | Séries temporais e comparativo por macrorregião |
-| 🎓 Conclusão Estratégica | Análise qualitativa plurianual com 6 subseções temáticas (rede, renda, raça, trabalho, demografia e síntese) |
+```bash
+docker build -t enem-analytics .
+docker run --rm -p 8501:8501 enem-analytics
+```
 
----
-
-## Notas de Qualidade e Tipagem
-
-- Todo o código sob `src/` é verificado com **Pyright** (`pyrightconfig.json`), com **zero erros estáticos** reportados na configuração atual.
-- Nos pontos em que os stubs de tipagem do Pandas resolvem incorretamente encadeamentos de `groupby(...).sum()/mean().reset_index()` ou `Series.isin()/value_counts()` sobre colunas dinamicamente selecionadas (limitação conhecida dos stubs, não um erro de lógica), o código utiliza comentários `# type: ignore[...]` pontuais, mantendo o tratamento defensivo de colunas/DataFrames opcionais (`if not df.empty and "coluna" in df.columns`) já existente em todas as views.
+O Dockerfile oferece uma alternativa de execução em container e pode servir de base para implantação em uma plataforma de nuvem compatível com Docker. Isso, por si só, não comprova que exista um deploy ativo. O workspace não contém configuração ou evidência suficiente para afirmar que o aplicativo esteja implantado no Streamlit Cloud ou em outro serviço de nuvem.
