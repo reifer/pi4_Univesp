@@ -63,6 +63,8 @@ A interface é construída em Streamlit, com gráficos interativos em Plotly. A 
 
 ## Stack tecnológica
 
+## Stack tecnológica
+
 | Área | Tecnologias e componentes |
 |---|---|
 | Linguagem | Python |
@@ -70,7 +72,7 @@ A interface é construída em Streamlit, com gráficos interativos em Plotly. A 
 | Machine Learning | PySpark ML |
 | Análise e leitura de dados | Pandas e PyArrow |
 | Armazenamento processado | Apache Parquet; compressão Zstandard configurada para as agregações |
-| Dashboard | Streamlit |
+| Dashboard e Nuvem | **Streamlit** (desenvolvimento da interface) e **Streamlit Community Cloud** (hospedagem e provisionamento em nuvem) |
 | Visualização | Plotly Express e Plotly Graph Objects |
 | Testes | Pytest |
 | Análise estática | Pyright |
@@ -146,9 +148,13 @@ python -m pytest -q
 python -m pyright
 ```
 
-## Docker e execução em nuvem
+## Docker, Streamlit Community Cloud e execução em nuvem
 
-O `Dockerfile` instala Java e as dependências Python, copia o projeto para a imagem e configura o Streamlit para escutar na porta `8501`. Para construir e iniciar o container:
+O projeto utiliza o ecossistema **Streamlit** de ponta a ponta para a entrega do produto:
+- **Streamlit Community Cloud:** Plataforma oficial utilizada para o provisionamento, hospedagem e acesso público do painel interativo na nuvem.
+- **Docker:** O `Dockerfile` oferece uma alternativa containerizada para execução local ou implantação em outras plataformas de nuvem compatíveis, instalando Java e as dependências Python, copiando o projeto para a imagem e configurando o Streamlit para escutar na porta `8501`.
+
+Para construir e iniciar o container localmente:
 
 ```bash
 docker build -t enem-analytics .
