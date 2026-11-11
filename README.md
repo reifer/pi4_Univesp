@@ -158,5 +158,3 @@ Para construir e iniciar o container localmente:
 docker build -t enem-analytics .
 docker run --rm -p 8501:8501 enem-analytics
 ```
-
-O Dockerfile oferece uma alternativa de execução em container e pode servir de base para implantação em uma plataforma de nuvem compatível com Docker. Isso, por si só, não comprova que exista um deploy ativo. O workspace não contém configuração ou evidência suficiente para afirmar que o aplicativo esteja implantado no Streamlit Cloud ou em outro serviço de nuvem.
