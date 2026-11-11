@@ -63,8 +63,6 @@ A interface é construída em Streamlit, com gráficos interativos em Plotly. A 
 
 ## Stack tecnológica
 
-## Stack tecnológica
-
 | Área | Tecnologias e componentes |
 |---|---|
 | Linguagem | Python |
